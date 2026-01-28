@@ -1,0 +1,1628 @@
+<script>
+  // ===================================================================
+  // iAPP PRO V5.0 - UI RENDERING
+  // All UI Components & Rendering Functions
+  // ===================================================================
+
+  const UI = {
+    // ===================================================================
+    // 1. INITIALIZATION
+    // ===================================================================
+    init() {
+      this.renderSidebar();
+      this.updateHeader();
+      this.updateFavBadge();
+    },
+
+    // ===================================================================
+    // 2. MAIN RENDER
+    // ===================================================================
+    render() {
+      this.renderPage(App.ui.currentTab);
+      App.updateFavBadge();
+    },
+
+    // ===================================================================
+    // 3. SIDEBAR RENDERING
+    // ===================================================================
+    renderSidebar() {
+      const nav = document.getElementById('sidebar-nav');
+      if (!nav) return;
+
+      const user = App.state.user;
+      const isAdmin = user?.role === 'Admin';
+      const isManager = user?.role === 'Manager';
+
+      let html = `
+      <div class="sidebar-nav-item active" data-tab="home" onclick="App.switchTab('home')">
+        <span class="sidebar-nav-icon"><i class="fas fa-home"></i></span>
+        <span class="sidebar-nav-text">Trang chủ</span>
+      </div>
+      <div class="sidebar-nav-item" data-tab="browse" onclick="App.switchTab('browse')">
+        <span class="sidebar-nav-icon"><i class="fas fa-compass"></i></span>
+        <span class="sidebar-nav-text">Khám phá</span>
+      </div>
+      <div class="sidebar-nav-item" data-tab="favorites" onclick="App.switchTab('favorites')">
+        <span class="sidebar-nav-icon"><i class="fas fa-heart"></i></span>
+        <span class="sidebar-nav-text">Yêu thích</span>
+      </div>
+      <div class="sidebar-nav-item" data-tab="profile" onclick="App.switchTab('profile')">
+        <span class="sidebar-nav-icon"><i class="fas fa-user"></i></span>
+        <span class="sidebar-nav-text">Hồ sơ</span>
+      </div>
+    `;
+
+      if (isAdmin) {
+        html += `
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-section-title">Quản trị</div>
+        <div class="sidebar-nav-item" onclick="App.openAdminUsers()">
+          <span class="sidebar-nav-icon"><i class="fas fa-users"></i></span>
+          <span class="sidebar-nav-text">Người dùng</span>
+        </div>
+        <div class="sidebar-nav-item" onclick="App.openAdminCategories()">
+          <span class="sidebar-nav-icon"><i class="fas fa-folder"></i></span>
+          <span class="sidebar-nav-text">Danh mục</span>
+        </div>
+        <div class="sidebar-nav-item" onclick="App.openAdminStats()">
+          <span class="sidebar-nav-icon"><i class="fas fa-chart-bar"></i></span>
+          <span class="sidebar-nav-text">Thống kê</span>
+        </div>
+        <div class="sidebar-nav-item" onclick="App.openAdminLogs()">
+          <span class="sidebar-nav-icon"><i class="fas fa-history"></i></span>
+          <span class="sidebar-nav-text">Nhật ký</span>
+        </div>
+      `;
+      } else if (isManager) {
+        html += `
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-section-title">Quản lý</div>
+        <div class="sidebar-nav-item" onclick="UI.showMyApps()">
+          <span class="sidebar-nav-icon"><i class="fas fa-cubes"></i></span>
+          <span class="sidebar-nav-text">App của tôi</span>
+        </div>
+      `;
+      }
+
+      nav.innerHTML = html;
+    },
+
+    // ===================================================================
+    // 4. HEADER UPDATE
+    // ===================================================================
+    updateHeader() {
+      const user = App.state.user;
+      if (!user) return;
+
+      const avatar = document.getElementById('header-avatar');
+      const name = document.getElementById('header-user-name');
+      const role = document.getElementById('header-user-role');
+      const addBtn = document.getElementById('header-add-btn');
+
+      if (avatar) {
+        avatar.textContent = (user.displayName || user.username || 'U').charAt(0).toUpperCase();
+      }
+      if (name) name.textContent = user.displayName || user.username || 'Người dùng';
+      if (role) role.textContent = user.role || 'User';
+
+
+      // Show add button for admin/manager
+      const canAdd = user.role === 'Admin' || user.role === 'Manager';
+      if (addBtn) addBtn.style.display = canAdd ? 'flex' : 'none';
+
+      // ⭐ THÊM: Hiện/ẩn FAB theo quyền
+      const fab = document.getElementById('fab-add');
+      if (fab) {
+        fab.style.display = canAdd ? 'flex' : 'none';
+      }
+    },
+
+    updateFavBadge() {
+      App.updateFavBadge();
+    },
+
+    // ===================================================================
+    // 5. PAGE RENDERING
+    // ===================================================================
+    renderPage(tabName) {
+      const content = document.getElementById('page-content');
+      if (!content) return;
+
+      switch (tabName) {
+        case 'home':
+          content.innerHTML = this.renderHomePage();
+          this.initCarousel();
+          break;
+        case 'browse':
+          content.innerHTML = this.renderBrowsePage();
+          break;
+        case 'favorites':
+          content.innerHTML = this.renderFavoritesPage();
+          break;
+        case 'profile':
+          content.innerHTML = this.renderProfilePage();
+          break;
+        default:
+          content.innerHTML = this.renderHomePage();
+          this.initCarousel();
+      }
+    },
+
+    // ===================================================================
+    // 6. HOME PAGE
+    // ===================================================================
+    renderHomePage() {
+      const apps = App.state.apps;
+      const categories = App.state.categories;
+      const recentIds = App.recent.apps;
+      const recentApps = recentIds.map(id => apps.find(a => a.id === id)).filter(Boolean);
+
+      // Featured apps (top viewed)
+      const featured = [...apps].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 5);
+
+      // Khởi tạo Pagination
+      Pagination.init(apps.length);
+
+      // Lấy apps cho trang hiện tại
+      const pagedApps = Pagination.getPageItems(apps);
+
+      // Greeting
+      const hour = new Date().getHours();
+      const greeting = hour < 12 ? 'Chào buổi sáng' : hour < 18 ? 'Chào buổi chiều' : 'Chào buổi tối';
+      const today = new Date().toLocaleDateString('vi-VN', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+      });
+
+      let html = `
+      <div class="page-header">
+        <p class="text-secondary text-sm">${greeting}, ${this.esc(App.state.user?.displayName || 'bạn')}</p>
+        <h1 class="page-title">${today}</h1>
+      </div>
+    `;
+
+      // Featured Carousel
+      if (featured.length > 0) {
+        html += this.renderFeaturedCarousel(featured);
+      }
+
+      // Recent Apps
+      if (recentApps.length > 0) {
+        html += `
+        <section class="section">
+          <div class="section-header">
+            <h2 class="section-title">🕐 Truy cập gần đây</h2>
+            <span class="section-action" onclick="UI.showAllRecent()">Xem tất cả</span>
+          </div>
+          <div class="h-scroll hide-scrollbar">
+            ${recentApps.slice(0, 8).map(app => this.renderSmallAppCard(app)).join('')}
+          </div>
+        </section>
+      `;
+      }
+
+      // Categories
+      if (categories.length > 0) {
+        html += `
+        <section class="section">
+          <div class="section-header">
+            <h2 class="section-title">📁 Danh mục</h2>
+            <span class="section-action" onclick="App.switchTab('browse')">Xem tất cả</span>
+          </div>
+          <div class="h-scroll hide-scrollbar">
+            ${categories.slice(0, 6).map((cat, i) => this.renderCategoryChip(cat, i)).join('')}
+          </div>
+        </section>
+      `;
+      }
+
+      // All Apps với View Toggle và Pagination
+      const viewMode = ViewMode.get();
+      const isGrid = viewMode === 'grid';
+
+      html += `
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">📱 Tất cả ứng dụng</h2>
+          <div class="flex items-center gap-3">
+            <span class="text-secondary text-sm">${apps.length} ứng dụng</span>
+            <div class="view-toggle">
+              <button class="view-toggle-btn ${isGrid ? 'active' : ''}" onclick="ViewMode.set('grid')" title="Xem dạng lưới">
+                <i class="fas fa-th-large"></i>
+              </button>
+              <button class="view-toggle-btn ${!isGrid ? 'active' : ''}" onclick="ViewMode.set('list')" title="Xem dạng danh sách">
+                <i class="fas fa-list"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        ${pagedApps.length > 0
+          ? (isGrid
+            ? `<div class="app-grid">${pagedApps.map(app => this.renderAppCard(app)).join('')}</div>`
+            : `<div class="app-list">${pagedApps.map(app => this.renderAppListCard(app)).join('')}</div>`
+          )
+          : this.renderEmpty('fa-inbox', 'Chưa có ứng dụng', 'Hãy thêm ứng dụng đầu tiên')
+        }
+        ${Pagination.render()}
+      </section>
+    `;
+
+      return html;
+    },
+
+
+    // ===================================================================
+    // 7. FEATURED CAROUSEL
+    // ===================================================================
+    renderFeaturedCarousel(apps) {
+      const gradients = [
+        'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
+        'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
+        'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
+        'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
+        'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)'
+      ];
+
+      return `
+      <section class="section">
+        <div class="featured-carousel" id="featured-carousel">
+          <div class="featured-slides" id="featured-slides">
+            ${apps.map((app, i) => `
+              <div class="featured-slide" style="background: ${gradients[i % gradients.length]};" onclick="App.openAppDetail('${app.id}')">
+                ${app.imageURL ? `<div class="featured-slide-bg" style="background-image: url('${this.esc(app.imageURL)}')"></div>` : ''}
+                <div class="featured-slide-content">
+                  <div class="featured-slide-tag">⭐ Nổi bật</div>
+                  <div class="featured-slide-title">${this.esc(app.name)}</div>
+                  <div class="featured-slide-desc">${this.esc(app.category || 'Ứng dụng')}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        <div class="featured-dots" id="featured-dots">
+          ${apps.map((_, i) => `<div class="featured-dot ${i === 0 ? 'active' : ''}" onclick="UI.goToSlide(${i})"></div>`).join('')}
+        </div>
+      </section>
+    `;
+    },
+
+    carouselIndex: 0,
+    carouselInterval: null,
+
+    initCarousel() {
+      this.stopCarousel();
+      const slides = document.querySelectorAll('#featured-slides .featured-slide');
+      if (slides.length <= 1) return;
+
+      this.carouselIndex = 0;
+      this.carouselInterval = setInterval(() => {
+        this.carouselIndex = (this.carouselIndex + 1) % slides.length;
+        this.goToSlide(this.carouselIndex);
+      }, 5000);
+    },
+
+    stopCarousel() {
+      if (this.carouselInterval) {
+        clearInterval(this.carouselInterval);
+        this.carouselInterval = null;
+      }
+    },
+
+    goToSlide(index) {
+      this.carouselIndex = index;
+      const container = document.getElementById('featured-slides');
+      if (container) {
+        container.style.transform = `translateX(-${index * 100}%)`;
+      }
+      document.querySelectorAll('#featured-dots .featured-dot').forEach((dot, i) => {
+        dot.classList.toggle('active', i === index);
+      });
+    },
+
+    // ===================================================================
+    // 8. BROWSE PAGE
+    // ===================================================================
+    renderBrowsePage() {
+      const categories = App.state.categories;
+      const apps = App.state.apps;
+
+      // Get popular tags
+      const tagCounts = {};
+      apps.forEach(app => {
+        this.parseTags(app.tags).forEach(tag => {
+          tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+        });
+      });
+      const popularTags = Object.entries(tagCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 12);
+
+      let html = `
+      <div class="page-header">
+        <h1 class="page-title">Khám phá</h1>
+        <p class="page-subtitle">Tìm kiếm theo danh mục</p>
+      </div>
+      
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">📁 Danh mục</h2>
+        </div>
+        <div class="category-grid">
+          ${categories.map((cat, i) => this.renderCategoryCard(cat, i)).join('')}
+        </div>
+      </section>
+    `;
+
+      if (popularTags.length > 0) {
+        html += `
+        <section class="section">
+          <div class="section-header">
+            <h2 class="section-title">🏷️ Tags phổ biến</h2>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            ${popularTags.map(([tag, count]) => `
+              <div class="tag" onclick="App.handleSearch('#${this.esc(tag)}')">
+                #${this.esc(tag)} <span class="text-tertiary">(${count})</span>
+              </div>
+            `).join('')}
+          </div>
+        </section>
+      `;
+      }
+
+      // Discover section
+      html += `
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">🔥 Khám phá</h2>
+        </div>
+        <div class="list">
+          <div class="list-item" onclick="UI.showTopViewed()">
+            <div class="list-icon orange"><i class="fas fa-fire"></i></div>
+            <div class="list-content">
+              <div class="list-title">App được xem nhiều</div>
+              <div class="list-subtitle">Những ứng dụng phổ biến nhất</div>
+            </div>
+            <i class="fas fa-chevron-right list-chevron"></i>
+          </div>
+          <div class="list-item" onclick="UI.showNewest()">
+            <div class="list-icon green"><i class="fas fa-sparkles"></i></div>
+            <div class="list-content">
+              <div class="list-title">App mới nhất</div>
+              <div class="list-subtitle">Vừa được thêm gần đây</div>
+            </div>
+            <i class="fas fa-chevron-right list-chevron"></i>
+          </div>
+          <div class="list-item" onclick="UI.showTopRated()">
+            <div class="list-icon pink"><i class="fas fa-star"></i></div>
+            <div class="list-content">
+              <div class="list-title">Đánh giá cao nhất</div>
+              <div class="list-subtitle">Được yêu thích nhất</div>
+            </div>
+            <i class="fas fa-chevron-right list-chevron"></i>
+          </div>
+        </div>
+      </section>
+    `;
+
+      return html;
+    },
+
+    // ===================================================================
+    // 9. FAVORITES PAGE
+    // ===================================================================
+    renderFavoritesPage() {
+      const favIds = App.isGuest() ? App.getLocalFavorites() : App.state.favorites;
+      const favApps = favIds.map(id => App.state.apps.find(a => a.id === id)).filter(Boolean);
+
+      let html = `
+      <div class="page-header">
+        <h1 class="page-title">Yêu thích</h1>
+        <p class="page-subtitle">${favApps.length} ứng dụng</p>
+      </div>
+    `;
+
+      if (favApps.length === 0) {
+        html += this.renderEmpty('fa-heart', 'Chưa có yêu thích', 'Nhấn trái tim để thêm ứng dụng yêu thích');
+      } else {
+        html += `
+        <div class="app-grid">
+          ${favApps.map(app => this.renderAppCard(app)).join('')}
+        </div>
+      `;
+      }
+
+      return html;
+    },
+
+    // ===================================================================
+    // 10. PROFILE PAGE
+    // ===================================================================
+    renderProfilePage() {
+      const user = App.state.user;
+      if (!user) return '';
+
+      const isAdmin = user.role === 'Admin';
+      const isManager = user.role === 'Manager';
+      const isGuest = App.isGuest();
+
+      const myApps = App.state.apps.filter(a => a.createdBy === user.id).length;
+      const favCount = isGuest ? App.getLocalFavorites().length : App.state.favorites.length;
+      const totalViews = App.state.apps.reduce((sum, a) => sum + (a.views || 0), 0);
+
+      const roleClass = isAdmin ? 'admin' : isManager ? 'manager' : isGuest ? 'guest' : '';
+
+      let html = `
+      <div class="profile-header">
+        <div class="avatar xxl profile-avatar">${(user.displayName || user.username || 'U').charAt(0).toUpperCase()}</div>
+        <h2 class="profile-name">${this.esc(user.displayName || user.username)}</h2>
+        <p class="profile-email">${this.esc(user.email || user.username)}</p>
+        <span class="profile-role ${roleClass}">${user.role}</span>
+      </div>
+      
+      <div class="stats-grid mb-6">
+        <div class="stat-card">
+          <div class="stat-value primary">${myApps}</div>
+          <div class="stat-label">Đã tạo</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value pink">${favCount}</div>
+          <div class="stat-label">Yêu thích</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value warning">${this.formatNumber(totalViews)}</div>
+          <div class="stat-label">Lượt xem</div>
+        </div>
+      </div>
+      
+      <div class="list-header">Cài đặt</div>
+      <div class="list mb-6">
+        <div class="list-item" onclick="App.openAppearanceSettings()">
+          <div class="list-icon purple"><i class="fas fa-palette"></i></div>
+          <div class="list-content">
+            <div class="list-title">Giao diện</div>
+          </div>
+          <span class="list-value">${App.settings.theme === 'light' ? 'Sáng' : 'Tối'}</span>
+          <i class="fas fa-chevron-right list-chevron"></i>
+        </div>
+        ${!isGuest ? `
+        <div class="list-item" onclick="App.openChangePassword()">
+          <div class="list-icon blue"><i class="fas fa-key"></i></div>
+          <div class="list-content">
+            <div class="list-title">Đổi mật khẩu</div>
+          </div>
+          <i class="fas fa-chevron-right list-chevron"></i>
+        </div>
+        ` : ''}
+      </div>
+    `;
+
+      // Admin section
+      if (isAdmin) {
+        html += `
+        <div class="list-header">Quản trị</div>
+        <div class="list mb-6">
+          <div class="list-item" onclick="App.openAdminUsers()">
+            <div class="list-icon blue"><i class="fas fa-users"></i></div>
+            <div class="list-content">
+              <div class="list-title">Quản lý người dùng</div>
+              <div class="list-subtitle">${App.state.users.length} người dùng</div>
+            </div>
+            <i class="fas fa-chevron-right list-chevron"></i>
+          </div>
+          <div class="list-item" onclick="App.openAdminCategories()">
+            <div class="list-icon orange"><i class="fas fa-folder"></i></div>
+            <div class="list-content">
+              <div class="list-title">Quản lý danh mục</div>
+              <div class="list-subtitle">${App.state.categories.length} danh mục</div>
+            </div>
+            <i class="fas fa-chevron-right list-chevron"></i>
+          </div>
+          <div class="list-item" onclick="App.openAdminStats()">
+            <div class="list-icon green"><i class="fas fa-chart-bar"></i></div>
+            <div class="list-content">
+              <div class="list-title">Thống kê</div>
+            </div>
+            <i class="fas fa-chevron-right list-chevron"></i>
+          </div>
+          <div class="list-item" onclick="App.openAdminLogs()">
+            <div class="list-icon gray"><i class="fas fa-history"></i></div>
+            <div class="list-content">
+              <div class="list-title">Nhật ký hoạt động</div>
+            </div>
+            <i class="fas fa-chevron-right list-chevron"></i>
+          </div>
+        </div>
+      `;
+      }
+
+      // Manager section
+      if (isManager && !isAdmin) {
+        html += `
+        <div class="list-header">Quản lý</div>
+        <div class="list mb-6">
+          <div class="list-item" onclick="UI.showMyApps()">
+            <div class="list-icon blue"><i class="fas fa-cubes"></i></div>
+            <div class="list-content">
+              <div class="list-title">Ứng dụng của tôi</div>
+              <div class="list-subtitle">${myApps} ứng dụng</div>
+            </div>
+            <i class="fas fa-chevron-right list-chevron"></i>
+          </div>
+        </div>
+      `;
+      }
+
+      // Support section
+      html += `
+      <div class="list-header">Hỗ trợ</div>
+      <div class="list mb-6">
+        <div class="list-item" onclick="App.openContact()">
+          <div class="list-icon cyan"><i class="fas fa-paper-plane"></i></div>
+          <div class="list-content">
+            <div class="list-title">Gửi phản hồi</div>
+          </div>
+          <i class="fas fa-chevron-right list-chevron"></i>
+        </div>
+        <div class="list-item" onclick="UI.showAbout()">
+          <div class="list-icon gray"><i class="fas fa-info-circle"></i></div>
+          <div class="list-content">
+            <div class="list-title">Về ứng dụng</div>
+          </div>
+          <span class="list-value">v5.0</span>
+          <i class="fas fa-chevron-right list-chevron"></i>
+        </div>
+      </div>
+      
+      <div class="list">
+        <div class="list-item" onclick="App.logout()">
+          <div class="list-content text-center">
+            <div class="list-title text-danger">Đăng xuất</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="text-center text-sm text-tertiary mt-6 mb-4">
+        <p>iApp Pro v5.0</p>
+        <p>© 2025 Admin Fz</p>
+      </div>
+    `;
+
+      return html;
+    },
+
+    // ===================================================================
+    // 11. SEARCH RESULTS
+    // ===================================================================
+    renderSearchResults(results, query) {
+      const content = document.getElementById('page-content');
+      if (!content) return;
+
+      let html = `
+      <div class="page-header">
+        <h1 class="page-title">Kết quả tìm kiếm</h1>
+        <p class="page-subtitle">${results.length} kết quả cho "${this.esc(query)}"</p>
+      </div>
+    `;
+
+      if (results.length === 0) {
+        html += this.renderEmpty('fa-search', 'Không tìm thấy', `Không có kết quả cho "${this.esc(query)}"`);
+      } else {
+        html += `<div class="app-grid">${results.map(app => this.renderAppCard(app)).join('')}</div>`;
+      }
+
+      content.innerHTML = html;
+    },
+
+    // ===================================================================
+    // 12. APP CARD COMPONENTS
+    // ===================================================================
+    renderAppCard(app) {
+      const isFav = App.isFavorite(app.id);
+      const rating = App.state.ratings[app.id];
+      const avg = rating?.average || app.avgRating || 0;
+
+      return `
+      <div class="app-card" onclick="App.openAppDetail('${app.id}')">
+        ${avg > 0 ? `<div class="app-card-badge"><i class="fas fa-star"></i> ${avg.toFixed(1)}</div>` : ''}
+        <button class="app-card-fav ${isFav ? 'active' : ''}" data-fav-id="${app.id}" 
+                onclick="event.stopPropagation(); App.toggleFavorite('${app.id}', this)">
+          <i class="${isFav ? 'fas' : 'far'} fa-heart"></i>
+        </button>
+        <div class="app-card-image" style="${app.imageURL ? `background-image: url('${this.esc(app.imageURL)}')` : ''}">
+          ${!app.imageURL ? '<div class="placeholder"><i class="fas fa-cube"></i></div>' : ''}
+          <div class="app-card-overlay">
+            <div class="app-card-actions">
+              ${app.link ? `<button class="app-card-action primary" onclick="event.stopPropagation(); App.openAppLink('${app.id}')"><i class="fas fa-external-link-alt"></i> Mở</button>` : ''}
+              <button class="app-card-action" onclick="event.stopPropagation(); App.openAppDetail('${app.id}')"><i class="fas fa-info-circle"></i> Chi tiết</button>
+            </div>
+          </div>
+        </div>
+        <div class="app-card-body">
+          <div class="app-card-header">
+            <div class="app-card-icon" style="${app.imageURL ? `background-image: url('${this.esc(app.imageURL)}')` : ''}">
+              ${!app.imageURL ? '<div class="placeholder"><i class="fas fa-cube"></i></div>' : ''}
+            </div>
+            <div class="app-card-info">
+              <div class="app-card-name">${this.esc(app.name)}</div>
+              <div class="app-card-category">${this.esc(app.category || 'Khác')}</div>
+            </div>
+          </div>
+          <div class="app-card-meta">
+            <span><i class="fas fa-eye"></i> ${this.formatNumber(app.views || 0)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+    },
+
+    // ===================================================================
+    // RENDER APP LIST CARD (cho List View)
+    // ===================================================================
+    renderAppListCard(app) {
+      const isFav = App.isFavorite(app.id);
+      const rating = App.state.ratings[app.id];
+      const avg = rating?.average || app.avgRating || 0;
+
+      return `
+      <div class="app-list-item" onclick="App.openAppDetail('${app.id}')">
+        <div class="app-list-image" style="${app.imageURL ? `background-image: url('${this.esc(app.imageURL)}')` : ''}">
+          ${!app.imageURL ? '<div class="placeholder"><i class="fas fa-cube"></i></div>' : ''}
+        </div>
+        <div class="app-list-content">
+          <div class="app-list-name">${this.esc(app.name)}</div>
+          <div class="app-list-meta">
+            <span>${this.esc(app.category || 'Khác')}</span>
+            <span><i class="fas fa-eye"></i> ${this.formatNumber(app.views || 0)}</span>
+            ${avg > 0 ? `<span class="app-list-rating"><i class="fas fa-star"></i> ${avg.toFixed(1)}</span>` : ''}
+          </div>
+        </div>
+        <div class="app-list-actions">
+          <button class="app-list-fav ${isFav ? 'active' : ''}" data-fav-id="${app.id}" 
+                  onclick="event.stopPropagation(); App.toggleFavorite('${app.id}', this)">
+            <i class="${isFav ? 'fas' : 'far'} fa-heart"></i>
+          </button>
+          <i class="fas fa-chevron-right app-list-chevron"></i>
+        </div>
+      </div>
+    `;
+    },
+
+
+    renderSmallAppCard(app) {
+      return `
+      <div class="app-card" style="width: 160px; flex-shrink: 0;" onclick="App.openAppDetail('${app.id}')">
+        <div class="app-card-image" style="aspect-ratio: 1; ${app.imageURL ? `background-image: url('${this.esc(app.imageURL)}')` : ''}">
+          ${!app.imageURL ? '<div class="placeholder"><i class="fas fa-cube"></i></div>' : ''}
+        </div>
+        <div class="app-card-body" style="padding: var(--space-3);">
+          <div class="app-card-name truncate" style="font-size: var(--font-sm);">${this.esc(app.name)}</div>
+          <div class="app-card-category" style="font-size: var(--font-xs);">${this.esc(app.category || '')}</div>
+        </div>
+      </div>
+    `;
+    },
+
+    renderAppListItem(app) {
+      const avg = App.state.ratings[app.id]?.average || app.avgRating || 0;
+
+      return `
+      <div class="list-item" onclick="App.openAppDetail('${app.id}')">
+        <div class="app-card-icon" style="width: 48px; height: 48px; border-radius: var(--radius-md); ${app.imageURL ? `background-image: url('${this.esc(app.imageURL)}'); background-size: cover;` : 'background: var(--bg-tertiary);'}">
+          ${!app.imageURL ? '<i class="fas fa-cube" style="color: var(--text-tertiary);"></i>' : ''}
+        </div>
+        <div class="list-content">
+          <div class="list-title">${this.esc(app.name)}</div>
+          <div class="list-subtitle">${this.esc(app.category || 'Khác')} • <i class="fas fa-eye"></i> ${this.formatNumber(app.views || 0)}${avg > 0 ? ` • <i class="fas fa-star" style="color: var(--yellow);"></i> ${avg.toFixed(1)}` : ''}</div>
+        </div>
+        <i class="fas fa-chevron-right list-chevron"></i>
+      </div>
+    `;
+    },
+
+    // ===================================================================
+    // 13. CATEGORY COMPONENTS
+    // ===================================================================
+    renderCategoryCard(cat, index) {
+      const count = App.state.apps.filter(a => a.category === cat.name).length;
+
+      return `
+      <div class="category-card" onclick="App.showCategoryApps('${cat.id}')">
+        <div class="category-icon c${index % 8}">
+          <i class="fas ${cat.icon || 'fa-folder'}"></i>
+        </div>
+        <div class="category-name">${this.esc(cat.name)}</div>
+        <div class="category-count">${count} ứng dụng</div>
+      </div>
+    `;
+    },
+
+    renderCategoryChip(cat, index) {
+      const count = App.state.apps.filter(a => a.category === cat.name).length;
+
+      return `
+      <div class="chip" onclick="App.showCategoryApps('${cat.id}')">
+        <i class="fas ${cat.icon || 'fa-folder'}"></i>
+        ${this.esc(cat.name)}
+        <span class="text-tertiary">${count}</span>
+      </div>
+    `;
+    },
+
+    // ===================================================================
+    // 14. APP DETAIL
+    // ===================================================================
+    renderAppDetailContent(app) {
+      const isFav = App.isFavorite(app.id);
+      const canEdit = app.canEdit || App.state.user?.role === 'Admin';
+      const rating = App.state.ratings[app.id] || {};
+      const avg = rating.average || app.avgRating || 0;
+      const userRating = rating.userRating || 0;
+      const tags = this.parseTags(app.tags);
+
+      const visibilityMap = {
+        'Public': 'Công khai',
+        'Guest': 'Khách trở lên',
+        'User': 'User trở lên',
+        'Manager': 'Manager trở lên',
+        'Admin': 'Chỉ Admin'
+      };
+
+      return `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('app-detail')">
+          <i class="fas fa-chevron-left"></i> Đóng
+        </button>
+        <span class="sheet-title">${this.esc(app.name)}</span>
+        ${canEdit ? `<button class="sheet-action" onclick="App.openEditApp('${app.id}')"><i class="fas fa-edit"></i></button>` : '<span style="width: 44px;"></span>'}
+      </div>
+      <div class="sheet-body">
+        <!-- Hero Image -->
+        <div style="width: 100%; aspect-ratio: 2/1; background: var(--bg-tertiary); position: relative; ${app.imageURL ? `background-image: url('${this.esc(app.imageURL)}'); background-size: cover; background-position: center;` : ''}">
+          ${!app.imageURL ? '<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"><i class="fas fa-cube" style="font-size: 64px; color: var(--text-tertiary);"></i></div>' : ''}
+          ${app.videoURL ? `<button class="btn btn-primary btn-icon" style="position: absolute; bottom: 16px; right: 16px;" onclick="UI.openVideo('${app.id}')"><i class="fas fa-play"></i></button>` : ''}
+        </div>
+        
+        <div class="p-4">
+          <!-- App Info -->
+          <div class="flex gap-3 mb-4">
+            <div class="app-card-icon" style="width: 72px; height: 72px; ${app.imageURL ? `background-image: url('${this.esc(app.imageURL)}'); background-size: cover;` : ''}">
+              ${!app.imageURL ? '<i class="fas fa-cube" style="font-size: 28px; color: var(--text-tertiary);"></i>' : ''}
+            </div>
+            <div class="flex-1">
+              <h2 class="text-xl font-bold mb-1">${this.esc(app.name)}</h2>
+              <p class="text-secondary mb-2">${this.esc(app.category || 'Ứng dụng')}</p>
+              <div class="flex items-center gap-2">
+                ${this.renderRatingStars(app.id, userRating)}
+                <span class="text-sm text-secondary">${avg > 0 ? avg.toFixed(1) : ''}</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Actions -->
+          <div class="flex gap-3 mb-4">
+            <button class="btn btn-primary flex-1" onclick="App.openAppLink('${app.id}')">
+              <i class="fas fa-external-link-alt"></i> Mở ứng dụng
+            </button>
+            <button class="btn btn-secondary btn-icon ${isFav ? 'active' : ''}" data-fav-id="${app.id}"
+                    onclick="App.toggleFavorite('${app.id}', this)"
+                    style="${isFav ? 'background: var(--pink); color: white;' : ''}">
+              <i class="${isFav ? 'fas' : 'far'} fa-heart"></i>
+            </button>
+          </div>
+          
+          <!-- Stats -->
+          <div class="list mb-4">
+            <div class="list-item no-hover">
+              <div class="list-icon blue"><i class="fas fa-eye"></i></div>
+              <div class="list-content"><div class="list-title">Lượt xem</div></div>
+              <span class="list-value">${this.formatNumber(app.views || 0)}</span>
+            </div>
+            <div class="list-item no-hover">
+              <div class="list-icon green"><i class="fas fa-calendar"></i></div>
+              <div class="list-content"><div class="list-title">Ngày tạo</div></div>
+              <span class="list-value">${app.createdAt ? new Date(app.createdAt).toLocaleDateString('vi-VN') : 'N/A'}</span>
+            </div>
+            <div class="list-item no-hover">
+              <div class="list-icon orange"><i class="fas fa-lock"></i></div>
+              <div class="list-content"><div class="list-title">Quyền truy cập</div></div>
+              <span class="list-value">${visibilityMap[app.visibility] || app.visibility || 'Riêng tư'}</span>
+            </div>
+          </div>
+          
+          <!-- Tags -->
+          ${tags.length > 0 ? `
+            <div class="flex flex-wrap gap-2 mb-4">
+              ${tags.map(tag => `<div class="tag" onclick="Modal.close('app-detail'); App.handleSearch('#${this.esc(tag)}')">#${this.esc(tag)}</div>`).join('')}
+            </div>
+          ` : ''}
+          
+          <!-- Description -->
+          ${app.description ? `
+            <div class="mb-4">
+              <h3 class="font-semibold mb-2">Mô tả</h3>
+              <p class="text-secondary" style="white-space: pre-wrap;">${this.esc(app.description)}</p>
+            </div>
+          ` : ''}
+          
+          <!-- Comments -->
+          <div class="mb-4">
+            <h3 class="font-semibold mb-3">Bình luận</h3>
+            <div id="comments-container">
+              <div class="text-center p-4 text-secondary">
+                <i class="fas fa-spinner fa-spin"></i> Đang tải...
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    },
+
+    // ===================================================================
+    // 15. PANEL RENDERING (Desktop)
+    // ===================================================================
+    renderPanel(app) {
+      const panelTitle = document.getElementById('panel-title');
+      const panelBody = document.getElementById('panel-body');
+
+      if (panelTitle) panelTitle.textContent = app.name;
+      if (!panelBody) return;
+
+      const isFav = App.isFavorite(app.id);
+      const canEdit = app.canEdit || App.state.user?.role === 'Admin';
+      const rating = App.state.ratings[app.id] || {};
+      const avg = rating.average || app.avgRating || 0;
+      const userRating = rating.userRating || 0;
+      const tags = this.parseTags(app.tags);
+
+      panelBody.innerHTML = `
+      <!-- Hero -->
+      <div style="width: 100%; aspect-ratio: 16/9; background: var(--bg-tertiary); position: relative; ${app.imageURL ? `background-image: url('${this.esc(app.imageURL)}'); background-size: cover; background-position: center;` : ''}">
+        ${!app.imageURL ? '<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"><i class="fas fa-cube" style="font-size: 48px; color: var(--text-tertiary);"></i></div>' : ''}
+        ${app.videoURL ? `<button class="btn btn-primary btn-icon" style="position: absolute; bottom: 16px; right: 16px;" onclick="UI.openVideo('${app.id}')"><i class="fas fa-play"></i></button>` : ''}
+      </div>
+      
+      <div class="p-4">
+        <!-- Info -->
+        <div class="flex gap-3 mb-4">
+          <div class="app-card-icon" style="width: 64px; height: 64px; ${app.imageURL ? `background-image: url('${this.esc(app.imageURL)}'); background-size: cover;` : ''}">
+            ${!app.imageURL ? '<i class="fas fa-cube" style="font-size: 24px; color: var(--text-tertiary);"></i>' : ''}
+          </div>
+          <div class="flex-1">
+            <h2 class="text-xl font-bold mb-1">${this.esc(app.name)}</h2>
+            <p class="text-secondary">${this.esc(app.category || 'Ứng dụng')}</p>
+            <div class="flex items-center gap-2 mt-2">
+              ${this.renderRatingStars(app.id, userRating)}
+              <span class="text-sm text-secondary">${avg > 0 ? avg.toFixed(1) : ''}</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Actions -->
+        <div class="flex gap-3 mb-4">
+          <button class="btn btn-primary flex-1" onclick="App.openAppLink('${app.id}')">
+            <i class="fas fa-external-link-alt"></i> Mở
+          </button>
+          <button class="btn btn-secondary btn-icon ${isFav ? 'active' : ''}" data-fav-id="${app.id}"
+                  onclick="App.toggleFavorite('${app.id}', this)"
+                  style="${isFav ? 'background: var(--pink); color: white;' : ''}">
+            <i class="${isFav ? 'fas' : 'far'} fa-heart"></i>
+          </button>
+          ${canEdit ? `<button class="btn btn-secondary btn-icon" onclick="App.openEditApp('${app.id}')"><i class="fas fa-edit"></i></button>` : ''}
+        </div>
+        
+        <!-- Quick Stats -->
+        <div class="flex gap-4 mb-4 text-sm text-secondary">
+          <span><i class="fas fa-eye"></i> ${this.formatNumber(app.views || 0)}</span>
+          <span><i class="fas fa-calendar"></i> ${app.createdAt ? new Date(app.createdAt).toLocaleDateString('vi-VN') : 'N/A'}</span>
+        </div>
+        
+        <!-- Tags -->
+        ${tags.length > 0 ? `
+          <div class="flex flex-wrap gap-2 mb-4">
+            ${tags.map(tag => `<div class="tag" onclick="App.closePanel(); App.handleSearch('#${this.esc(tag)}')">#${this.esc(tag)}</div>`).join('')}
+          </div>
+        ` : ''}
+        
+        <!-- Description -->
+        ${app.description ? `
+          <div class="mb-4">
+            <h3 class="font-semibold mb-2">Mô tả</h3>
+            <p class="text-secondary text-sm" style="white-space: pre-wrap;">${this.esc(app.description)}</p>
+          </div>
+        ` : ''}
+        
+        <!-- Comments -->
+        <div class="mb-4">
+          <h3 class="font-semibold mb-3">Bình luận</h3>
+          <div id="panel-comments-container">
+            <div class="text-center p-4 text-secondary">
+              <i class="fas fa-spinner fa-spin"></i> Đang tải...
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+      // Load comments
+      setTimeout(() => Comments.load(app.id, 'panel-comments-container'), 100);
+    },
+
+    // ===================================================================
+    // 16. RATING STARS
+    // ===================================================================
+    renderRatingStars(appId, userRating = 0) {
+      let html = '<div class="rating">';
+      for (let i = 1; i <= 5; i++) {
+        const filled = i <= userRating ? 'filled fas' : 'far';
+        html += `<i class="rating-star ${filled} fa-star" onclick="event.stopPropagation(); App.rateApp('${appId}', ${i})"></i>`;
+      }
+      html += '</div>';
+      return html;
+    },
+
+    // ===================================================================
+    // 17. FORMS
+    // ===================================================================
+    renderAppForm(app = null) {
+      const isEdit = !!app;
+      const categories = App.state.categories;
+
+      return `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('app-form')">Hủy</button>
+        <span class="sheet-title">${isEdit ? 'Chỉnh sửa' : 'Thêm ứng dụng'}</span>
+        <button class="sheet-action primary" onclick="App.saveApp()">Lưu</button>
+      </div>
+      <div class="sheet-body" id="app-form-content">
+        <div class="list-header">THÔNG TIN CƠ BẢN</div>
+        <div class="list mb-4">
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="text" id="app-name" class="input" placeholder="Tên ứng dụng *" value="${this.esc(app?.name || '')}" required maxlength="100">
+          </div>
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="url" id="app-link" class="input" placeholder="Đường dẫn (https://...)" value="${this.esc(app?.link || '')}">
+          </div>
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <select id="app-category" class="select">
+              ${categories.map(c => `<option value="${this.esc(c.name)}" ${app?.category === c.name ? 'selected' : ''}>${this.esc(c.name)}</option>`).join('')}
+              <option value="Khác" ${app?.category === 'Khác' || !app?.category ? 'selected' : ''}>Khác</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="list-header">MÔ TẢ</div>
+        <div class="mb-4">
+          <textarea id="app-desc" class="textarea" placeholder="Mô tả chi tiết..." maxlength="2000">${this.esc(app?.description || '')}</textarea>
+        </div>
+        
+        <div class="list-header">MEDIA</div>
+        <div class="list mb-4">
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="url" id="app-image-url" class="input" placeholder="URL hình ảnh" value="${this.esc(app?.imageURL || '')}">
+          </div>
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="url" id="app-video" class="input" placeholder="URL video (YouTube, Drive...)" value="${this.esc(app?.videoURL || '')}">
+          </div>
+        </div>
+        
+        <div class="list-header">CÀI ĐẶT</div>
+        <div class="list mb-4">
+          <div class="list-item no-hover">
+            <span class="text-secondary">Quyền xem</span>
+            <select id="app-visibility" class="select" style="flex: 1; text-align: right;">
+              <option value="Public" ${app?.visibility === 'Public' ? 'selected' : ''}>Công khai</option>
+              <option value="Guest" ${app?.visibility === 'Guest' ? 'selected' : ''}>Khách trở lên</option>
+              <option value="User" ${app?.visibility === 'User' ? 'selected' : ''}>User trở lên</option>
+              <option value="Manager" ${app?.visibility === 'Manager' ? 'selected' : ''}>Manager trở lên</option>
+              <option value="Admin" ${app?.visibility === 'Admin' ? 'selected' : ''}>Chỉ Admin</option>
+            </select>
+          </div>
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="text" id="app-tags" class="input" placeholder="Tags (#tool #hr #report)" value="${this.esc(app?.tags || '')}">
+          </div>
+        </div>
+        
+        ${isEdit ? `
+          <div class="list">
+            <div class="list-item" onclick="App.deleteApp('${app.id}')">
+              <div class="list-content text-center">
+                <div class="list-title text-danger">Xóa ứng dụng</div>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+    },
+
+    renderUserForm(user = null) {
+      const isEdit = !!user;
+
+      return `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('user-form')">Hủy</button>
+        <span class="sheet-title">${isEdit ? 'Chỉnh sửa người dùng' : 'Thêm người dùng'}</span>
+        <button class="sheet-action primary" onclick="App.saveUser()">Lưu</button>
+      </div>
+      <div class="sheet-body">
+        <div class="list-header">THÔNG TIN TÀI KHOẢN</div>
+        <div class="list mb-4">
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="text" id="user-username" class="input" placeholder="Tên đăng nhập *" value="${this.esc(user?.username || '')}" ${isEdit ? 'disabled' : ''} pattern="[a-zA-Z0-9_]{3,20}">
+          </div>
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="password" id="user-password" class="input" placeholder="${isEdit ? 'Mật khẩu mới (để trống nếu không đổi)' : 'Mật khẩu *'}" minlength="6">
+          </div>
+        </div>
+        
+        <div class="list-header">THÔNG TIN CÁ NHÂN</div>
+        <div class="list mb-4">
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="text" id="user-display" class="input" placeholder="Tên hiển thị" value="${this.esc(user?.displayName || '')}">
+          </div>
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="email" id="user-email" class="input" placeholder="Email" value="${this.esc(user?.email || '')}">
+          </div>
+        </div>
+        
+        <div class="list-header">QUYỀN HẠN</div>
+        <div class="list mb-4">
+          <div class="list-item no-hover">
+            <span class="text-secondary">Vai trò</span>
+            <select id="user-role" class="select" style="flex: 1; text-align: right;">
+              <option value="Admin" ${user?.role === 'Admin' ? 'selected' : ''}>Admin</option>
+              <option value="Manager" ${user?.role === 'Manager' ? 'selected' : ''}>Manager</option>
+              <option value="User" ${user?.role === 'User' || !user ? 'selected' : ''}>User</option>
+            </select>
+          </div>
+          <div class="list-item no-hover">
+            <span class="text-secondary">Trạng thái</span>
+            <select id="user-status" class="select" style="flex: 1; text-align: right;">
+              <option value="Active" ${user?.status === 'Active' || !user ? 'selected' : ''}>Hoạt động</option>
+              <option value="Inactive" ${user?.status === 'Inactive' ? 'selected' : ''}>Vô hiệu hóa</option>
+            </select>
+          </div>
+        </div>
+        
+        ${isEdit && user.id !== App.state.user?.id ? `
+          <div class="list">
+            <div class="list-item" onclick="App.deleteUser('${user.id}')">
+              <div class="list-content text-center">
+                <div class="list-title text-danger">Xóa người dùng</div>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+    },
+
+    renderCategoryForm(cat = null) {
+      const isEdit = !!cat;
+      const icons = [
+        'fa-folder', 'fa-users', 'fa-chart-line', 'fa-laptop-code', 'fa-warehouse',
+        'fa-money-bill-wave', 'fa-bullhorn', 'fa-shopping-cart', 'fa-tasks', 'fa-graduation-cap',
+        'fa-file-alt', 'fa-video', 'fa-sitemap', 'fa-database', 'fa-shield-alt',
+        'fa-life-ring', 'fa-chart-pie', 'fa-plug', 'fa-handshake', 'fa-star',
+        'fa-cog', 'fa-envelope', 'fa-calendar', 'fa-bell', 'fa-home',
+        'fa-building', 'fa-briefcase', 'fa-calculator', 'fa-clipboard', 'fa-comments'
+      ];
+
+      return `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('category-form')">Hủy</button>
+        <span class="sheet-title">${isEdit ? 'Chỉnh sửa danh mục' : 'Thêm danh mục'}</span>
+        <button class="sheet-action primary" onclick="App.saveCategory()">Lưu</button>
+      </div>
+      <div class="sheet-body">
+        <div class="list-header">THÔNG TIN DANH MỤC</div>
+        <div class="list mb-4">
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="text" id="cat-name" class="input" placeholder="Tên danh mục *" value="${this.esc(cat?.name || '')}" maxlength="50">
+          </div>
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="text" id="cat-desc" class="input" placeholder="Mô tả" value="${this.esc(cat?.description || '')}">
+          </div>
+          <div class="list-item no-hover">
+            <span class="text-secondary">Thứ tự</span>
+            <input type="number" id="cat-sort" class="input" value="${cat?.sortOrder || 0}" min="0" style="text-align: right; width: 80px;">
+          </div>
+        </div>
+        
+        <div class="list-header">CHỌN ICON</div>
+        <input type="hidden" id="cat-icon" value="${cat?.icon || 'fa-folder'}">
+        <div class="icon-picker">
+          ${icons.map(icon => `
+            <div class="icon-picker-item ${icon === (cat?.icon || 'fa-folder') ? 'selected' : ''}" 
+                 data-icon="${icon}" 
+                 onclick="App.selectIcon('${icon}')">
+              <i class="fas ${icon}"></i>
+            </div>
+          `).join('')}
+        </div>
+        
+        ${isEdit ? `
+          <div class="list mt-4">
+            <div class="list-item" onclick="App.deleteCategory('${cat.id}')">
+              <div class="list-content text-center">
+                <div class="list-title text-danger">Xóa danh mục</div>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+    },
+
+    // ===================================================================
+    // 18. ADMIN PAGES
+    // ===================================================================
+    renderAdminUsers() {
+      const users = App.state.users;
+
+      return `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('admin-users')">
+          <i class="fas fa-chevron-left"></i> Đóng
+        </button>
+        <span class="sheet-title">Quản lý người dùng</span>
+        <button class="sheet-action primary" onclick="App.openAddUser()">
+          <i class="fas fa-plus"></i> Thêm
+        </button>
+      </div>
+      <div class="sheet-body">
+        ${users.length === 0
+          ? this.renderEmpty('fa-users', 'Chưa có người dùng')
+          : `
+            <div class="list">
+              ${users.map(user => `
+                <div class="list-item" onclick="App.openEditUser('${user.id}')">
+                  <div class="avatar sm">${(user.displayName || user.username || 'U').charAt(0).toUpperCase()}</div>
+                  <div class="list-content">
+                    <div class="list-title">${this.esc(user.displayName || user.username)}</div>
+                    <div class="list-subtitle">${this.esc(user.email || user.username)} • ${user.role}</div>
+                  </div>
+                  <span class="badge ${user.status === 'Active' ? 'success' : ''}">${user.status}</span>
+                  <i class="fas fa-chevron-right list-chevron"></i>
+                </div>
+              `).join('')}
+            </div>
+          `
+        }
+      </div>
+    `;
+    },
+
+    renderAdminCategories() {
+      const categories = App.state.categories;
+
+      return `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('admin-categories')">
+          <i class="fas fa-chevron-left"></i> Đóng
+        </button>
+        <span class="sheet-title">Quản lý danh mục</span>
+        <button class="sheet-action primary" onclick="App.openAddCategory()">
+          <i class="fas fa-plus"></i> Thêm
+        </button>
+      </div>
+      <div class="sheet-body">
+        ${categories.length === 0
+          ? this.renderEmpty('fa-folder', 'Chưa có danh mục')
+          : `
+            <div class="list">
+              ${categories.map(cat => {
+            const count = App.state.apps.filter(a => a.category === cat.name).length;
+            return `
+                  <div class="list-item" onclick="App.openEditCategory('${cat.id}')">
+                    <div class="list-icon blue"><i class="fas ${cat.icon || 'fa-folder'}"></i></div>
+                    <div class="list-content">
+                      <div class="list-title">${this.esc(cat.name)}</div>
+                      <div class="list-subtitle">${count} ứng dụng • Thứ tự: ${cat.sortOrder || 0}</div>
+                    </div>
+                    <i class="fas fa-chevron-right list-chevron"></i>
+                  </div>
+                `;
+          }).join('')}
+            </div>
+          `
+        }
+      </div>
+    `;
+    },
+
+    renderAdminStats() {
+      const stats = App.state.stats;
+      const apps = App.state.apps;
+      const catCounts = stats.categoryCounts || {};
+      const sortedCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
+
+      return `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('admin-stats')">
+          <i class="fas fa-chevron-left"></i> Đóng
+        </button>
+        <span class="sheet-title">Thống kê</span>
+        <span style="width: 44px;"></span>
+      </div>
+      <div class="sheet-body p-4">
+        <div class="stats-grid mb-6">
+          <div class="stat-card">
+            <div class="stat-value primary">${stats.totalApps || 0}</div>
+            <div class="stat-label">Ứng dụng</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value success">${stats.totalUsers || 0}</div>
+            <div class="stat-label">Người dùng</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value warning">${this.formatNumber(stats.totalViews || 0)}</div>
+            <div class="stat-label">Lượt xem</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value pink">${App.state.categories.length}</div>
+            <div class="stat-label">Danh mục</div>
+          </div>
+        </div>
+        
+        <h3 class="font-semibold mb-3">Theo danh mục</h3>
+        <div class="list">
+          ${sortedCats.map(([name, count]) => {
+        const pct = apps.length > 0 ? ((count / apps.length) * 100).toFixed(1) : 0;
+        return `
+              <div class="list-item no-hover" style="flex-direction: column; align-items: stretch; gap: var(--space-2);">
+                <div class="flex justify-between">
+                  <span>${this.esc(name)}</span>
+                  <span class="text-secondary">${count} (${pct}%)</span>
+                </div>
+                <div style="height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
+                  <div style="width: ${pct}%; height: 100%; background: var(--primary); border-radius: 3px;"></div>
+                </div>
+              </div>
+            `;
+      }).join('')}
+        </div>
+      </div>
+    `;
+    },
+
+    renderAdminLogs(logs) {
+      return `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('admin-logs')">
+          <i class="fas fa-chevron-left"></i> Đóng
+        </button>
+        <span class="sheet-title">Nhật ký hoạt động</span>
+        <span style="width: 44px;"></span>
+      </div>
+      <div class="sheet-body">
+        ${!logs || logs.length === 0
+          ? this.renderEmpty('fa-history', 'Chưa có nhật ký')
+          : `
+            <div class="list">
+              ${logs.map(log => {
+            const time = log.timestamp ? new Date(log.timestamp).toLocaleString('vi-VN') : '';
+            const isSuccess = (log.result || '').toLowerCase().includes('success');
+            return `
+                  <div class="list-item no-hover" style="flex-direction: column; align-items: stretch; gap: var(--space-2);">
+                    <div class="flex items-center gap-2">
+                      <span class="badge ${isSuccess ? 'success' : ''}">${this.esc(log.action || '')}</span>
+                      <span class="text-xs text-tertiary ml-auto">${time}</span>
+                    </div>
+                    <p class="text-sm text-secondary">${this.esc(log.details || '')}</p>
+                    <p class="text-xs text-tertiary">${this.esc(log.userId || '')}</p>
+                  </div>
+                `;
+          }).join('')}
+            </div>
+          `
+        }
+      </div>
+    `;
+    },
+
+    // ===================================================================
+    // 19. OTHER SHEETS
+    // ===================================================================
+    renderAppearanceSettings() {
+      const theme = App.settings.theme;
+
+      return `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('appearance')">
+          <i class="fas fa-chevron-left"></i> Đóng
+        </button>
+        <span class="sheet-title">Giao diện</span>
+        <span style="width: 44px;"></span>
+      </div>
+      <div class="sheet-body p-4">
+        <div class="list">
+          <div class="list-item" onclick="App.settings.theme = 'light'; App.saveSettings(); App.applyTheme(); Modal.close('appearance');">
+            <div class="list-icon" style="background: #f1f5f9; color: #0f172a;"><i class="fas fa-sun"></i></div>
+            <div class="list-content">
+              <div class="list-title">Sáng</div>
+            </div>
+            ${theme === 'light' ? '<i class="fas fa-check text-accent"></i>' : ''}
+          </div>
+          <div class="list-item" onclick="App.settings.theme = 'dark'; App.saveSettings(); App.applyTheme(); Modal.close('appearance');">
+            <div class="list-icon" style="background: #1e293b; color: #f8fafc;"><i class="fas fa-moon"></i></div>
+            <div class="list-content">
+              <div class="list-title">Tối</div>
+            </div>
+            ${theme === 'dark' ? '<i class="fas fa-check text-accent"></i>' : ''}
+          </div>
+        </div>
+      </div>
+    `;
+    },
+
+    renderChangePassword() {
+      return `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('change-password')">Hủy</button>
+        <span class="sheet-title">Đổi mật khẩu</span>
+        <button class="sheet-action primary" onclick="App.changePassword()">Lưu</button>
+      </div>
+      <div class="sheet-body p-4">
+        <div class="list">
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="password" id="cur-pwd" class="input" placeholder="Mật khẩu hiện tại">
+          </div>
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="password" id="new-pwd" class="input" placeholder="Mật khẩu mới (≥6 ký tự)">
+          </div>
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="password" id="confirm-pwd" class="input" placeholder="Xác nhận mật khẩu mới">
+          </div>
+        </div>
+      </div>
+    `;
+    },
+
+    renderContact() {
+      const user = App.state.user;
+
+      return `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('contact')">Hủy</button>
+        <span class="sheet-title">Gửi phản hồi</span>
+        <button class="sheet-action primary" onclick="App.submitContact()">Gửi</button>
+      </div>
+      <div class="sheet-body p-4">
+        <div class="list mb-4">
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="text" id="contact-name" class="input" placeholder="Họ tên *" value="${this.esc(user?.displayName || '')}">
+          </div>
+          <div class="list-item no-hover" style="flex-direction: column; align-items: stretch;">
+            <input type="email" id="contact-email" class="input" placeholder="Email *" value="${this.esc(user?.email || '')}">
+          </div>
+        </div>
+        <textarea id="contact-message" class="textarea" placeholder="Nội dung phản hồi *" style="min-height: 150px;"></textarea>
+      </div>
+    `;
+    },
+
+    renderCategorySheet(cat, apps) {
+      return `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('category-apps')">
+          <i class="fas fa-chevron-left"></i> Đóng
+        </button>
+        <span class="sheet-title">${this.esc(cat.name)}</span>
+        <span style="width: 44px;"></span>
+      </div>
+      <div class="sheet-body">
+        ${apps.length === 0
+          ? this.renderEmpty('fa-inbox', 'Chưa có ứng dụng', 'Danh mục này chưa có ứng dụng nào')
+          : `
+            <div class="list">
+              ${apps.map(app => this.renderAppListItem(app)).join('')}
+            </div>
+          `
+        }
+      </div>
+    `;
+    },
+
+    renderCategoryPage(cat, apps) {
+      const content = document.getElementById('page-content');
+      if (!content) return;
+
+      content.innerHTML = `
+      <div class="page-header">
+        <h1 class="page-title">${this.esc(cat.name)}</h1>
+        <p class="page-subtitle">${apps.length} ứng dụng</p>
+      </div>
+      ${apps.length === 0
+          ? this.renderEmpty('fa-inbox', 'Chưa có ứng dụng')
+          : `<div class="app-grid">${apps.map(app => this.renderAppCard(app)).join('')}</div>`
+        }
+    `;
+    },
+
+    // ===================================================================
+    // 20. UTILITY RENDER FUNCTIONS
+    // ===================================================================
+    renderEmpty(icon, title, desc = '') {
+      return `
+      <div class="empty-state">
+        <div class="empty-icon"><i class="fas ${icon}"></i></div>
+        <div class="empty-title">${this.esc(title)}</div>
+        ${desc ? `<div class="empty-desc">${this.esc(desc)}</div>` : ''}
+      </div>
+    `;
+    },
+
+    // ===================================================================
+    // 21. HELPER FUNCTIONS
+    // ===================================================================
+    showTopViewed() {
+      const apps = [...App.state.apps].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 20);
+      this.showAppList('App được xem nhiều', apps);
+    },
+
+    showNewest() {
+      const apps = [...App.state.apps].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 20);
+      this.showAppList('App mới nhất', apps);
+    },
+
+    showTopRated() {
+      const apps = App.state.apps
+        .map(app => ({ ...app, avgRating: App.state.ratings[app.id]?.average || app.avgRating || 0 }))
+        .filter(a => a.avgRating > 0)
+        .sort((a, b) => b.avgRating - a.avgRating)
+        .slice(0, 20);
+      this.showAppList('Đánh giá cao nhất', apps);
+    },
+
+    showAllRecent() {
+      const apps = App.recent.apps.map(id => App.state.apps.find(a => a.id === id)).filter(Boolean);
+      this.showAppList('Truy cập gần đây', apps);
+    },
+
+    showMyApps() {
+      const apps = App.state.apps.filter(a => a.createdBy === App.state.user?.id);
+      this.showAppList('Ứng dụng của tôi', apps);
+    },
+
+    showAppList(title, apps) {
+      if (App.ui.isDesktop) {
+        const content = document.getElementById('page-content');
+        if (content) {
+          content.innerHTML = `
+          <div class="page-header">
+            <h1 class="page-title">${this.esc(title)}</h1>
+            <p class="page-subtitle">${apps.length} ứng dụng</p>
+          </div>
+          ${apps.length === 0
+              ? this.renderEmpty('fa-inbox', 'Không có dữ liệu')
+              : `<div class="app-grid">${apps.map(app => this.renderAppCard(app)).join('')}</div>`
+            }
+        `;
+        }
+      } else {
+        Modal.showSheet('app-list', `
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <button class="sheet-action" onclick="Modal.close('app-list')">
+            <i class="fas fa-chevron-left"></i> Đóng
+          </button>
+          <span class="sheet-title">${this.esc(title)}</span>
+          <span style="width: 44px;"></span>
+        </div>
+        <div class="sheet-body">
+          ${apps.length === 0
+            ? this.renderEmpty('fa-inbox', 'Không có dữ liệu')
+            : `<div class="list">${apps.map(app => this.renderAppListItem(app)).join('')}</div>`
+          }
+        </div>
+      `);
+      }
+    },
+
+    showAbout() {
+      Modal.showActionSheet([
+        { text: 'iApp Pro v5.0', disabled: true },
+        { text: '© 2025 Admin Fz', disabled: true },
+        { text: 'Làm mới dữ liệu', handler: () => App.refreshData() }
+      ]);
+    },
+
+    openVideo(appId) {
+      const app = App.state.apps.find(a => a.id === appId);
+      if (!app?.videoURL) {
+        Toast.show('Không có video', 'error');
+        return;
+      }
+
+      const url = app.videoURL.trim();
+      let embedUrl = '';
+
+      // YouTube
+      if (url.includes('youtube.com') || url.includes('youtu.be')) {
+        let videoId = '';
+        if (url.includes('youtu.be/')) videoId = url.split('youtu.be/')[1]?.split(/[?&]/)[0];
+        else if (url.includes('v=')) videoId = url.split('v=')[1]?.split(/[?&]/)[0];
+        if (videoId) embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+      }
+      // Google Drive
+      else if (url.includes('drive.google.com')) {
+        let fileId = '';
+        if (url.includes('/file/d/')) fileId = url.split('/file/d/')[1]?.split('/')[0];
+        else if (url.includes('id=')) fileId = url.split('id=')[1]?.split('&')[0];
+        if (fileId) embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+      }
+
+      if (!embedUrl) {
+        window.open(url, '_blank');
+        return;
+      }
+
+      Modal.showSheet('video', `
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="sheet-action" onclick="Modal.close('video')">
+          <i class="fas fa-times"></i> Đóng
+        </button>
+        <span class="sheet-title">${this.esc(app.name)}</span>
+        <span style="width: 44px;"></span>
+      </div>
+      <div class="sheet-body p-0">
+        <div style="width: 100%; aspect-ratio: 16/9; background: #000;">
+          <iframe src="${embedUrl}" style="width: 100%; height: 100%; border: none;" 
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                  allowfullscreen></iframe>
+        </div>
+      </div>
+    `);
+    },
+
+    // ===================================================================
+    // 22. ESCAPE & FORMAT UTILITIES
+    // ===================================================================
+    esc(text) {
+      if (text == null) return '';
+      const div = document.createElement('div');
+      div.textContent = String(text);
+      return div.innerHTML;
+    },
+
+    formatNumber(n) {
+      n = parseInt(n) || 0;
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+      return n.toLocaleString('vi-VN');
+    },
+
+    parseTags(str) {
+      if (!str) return [];
+      return str.split(/[,\s]+/).map(t => t.replace(/^#/, '').trim()).filter(Boolean);
+    },
+
+    timeAgo(date) {
+      if (!date) return '';
+      const diff = Date.now() - new Date(date).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'Vừa xong';
+      if (mins < 60) return mins + ' phút trước';
+      const hrs = Math.floor(diff / 3600000);
+      if (hrs < 24) return hrs + ' giờ trước';
+      const days = Math.floor(diff / 86400000);
+      if (days < 7) return days + ' ngày trước';
+      return new Date(date).toLocaleDateString('vi-VN');
+    }
+  };
+</script>

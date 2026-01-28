@@ -1,0 +1,211 @@
+<script>
+  // ===================================================================
+  // iAPP PRO V5.0 - COMMENTS & ADDITIONAL APIs
+  // ===================================================================
+
+  const Comments = {
+    // ===================================================================
+    // 1. LOAD COMMENTS
+    // ===================================================================
+    load(appId, containerId) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      container.innerHTML = `
+      <div class="text-center p-4 text-secondary">
+        <i class="fas fa-spinner fa-spin"></i> Đang tải bình luận...
+      </div>
+    `;
+
+      API.call('getCommentsByApp', [App.state.sessionId, appId])
+        .then(result => {
+          if (result.success) {
+            this.render(appId, result.comments, containerId);
+          } else {
+            container.innerHTML = `<p class="text-center text-secondary p-4">Lỗi tải bình luận</p>`;
+          }
+        })
+        .catch(error => {
+          container.innerHTML = `<p class="text-center text-secondary p-4">Lỗi: ${error.message}</p>`;
+        });
+    },
+
+    // ===================================================================
+    // 2. RENDER COMMENTS
+    // ===================================================================
+    render(appId, comments, containerId) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      const canComment = App.state.permissions?.canComment;
+      const user = App.state.user;
+
+      let html = '';
+
+      // Comment input
+      if (canComment) {
+        html += `
+        <div class="comment-input-wrap">
+          <div class="avatar sm">${(user?.displayName || 'U').charAt(0).toUpperCase()}</div>
+          <div class="comment-input">
+            <input type="text" id="cmt-input-${appId}" placeholder="Viết bình luận..." maxlength="1000" 
+                   onkeydown="if(event.key==='Enter') Comments.submit('${appId}', '${containerId}')">
+          </div>
+          <button class="comment-send" onclick="Comments.submit('${appId}', '${containerId}')">
+            <i class="fas fa-paper-plane"></i>
+          </button>
+        </div>
+      `;
+      }
+
+      // Comments list
+      if (!comments || comments.length === 0) {
+        html += `
+        <div class="text-center p-6 text-secondary">
+          <i class="fas fa-comments" style="font-size: 32px; opacity: 0.5;"></i>
+          <p class="mt-2">Chưa có bình luận</p>
+        </div>
+      `;
+      } else {
+        html += comments.map(cmt => `
+        <div class="comment-item" data-id="${cmt.id}">
+          <div class="avatar sm">${UI.esc(cmt.userInitial || 'U')}</div>
+          <div class="comment-content">
+            <div class="comment-header">
+              <span class="comment-author">${UI.esc(cmt.userName || 'Người dùng')}</span>
+              <span class="comment-time">${UI.timeAgo(cmt.createdAt)}</span>
+              ${cmt.edited ? '<span class="text-xs text-tertiary">(đã sửa)</span>' : ''}
+            </div>
+            <div class="comment-text">${UI.esc(cmt.content || '')}</div>
+            ${(cmt.canEdit || cmt.canDelete) ? `
+              <div class="comment-actions">
+                ${cmt.canEdit ? `<button class="comment-action" onclick="Comments.edit('${cmt.id}', '${appId}', '${containerId}')"><i class="fas fa-edit"></i> Sửa</button>` : ''}
+                ${cmt.canDelete ? `<button class="comment-action" onclick="Comments.delete('${cmt.id}', '${appId}', '${containerId}')"><i class="fas fa-trash"></i> Xóa</button>` : ''}
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `).join('');
+      }
+
+      container.innerHTML = html;
+    },
+
+    // ===================================================================
+    // 3. SUBMIT COMMENT
+    // ===================================================================
+    submit(appId, containerId) {
+      const input = document.getElementById(`cmt-input-${appId}`);
+      const content = input?.value?.trim();
+
+      if (!content) {
+        Toast.show('Vui lòng nhập nội dung', 'warning');
+        return;
+      }
+
+      input.value = '';
+
+      API.call('addComment', [App.state.sessionId, appId, content])
+        .then(result => {
+          if (result.success) {
+            Toast.show('Đã thêm bình luận', 'success');
+            this.load(appId, containerId);
+          } else {
+            Toast.show(result.error || 'Lỗi', 'error');
+          }
+        })
+        .catch(error => {
+          Toast.show('Lỗi: ' + error.message, 'error');
+        });
+    },
+
+    // ===================================================================
+    // 4. EDIT COMMENT
+    // ===================================================================
+    edit(commentId, appId, containerId) {
+      const commentEl = document.querySelector(`[data-id="${commentId}"] .comment-text`);
+      if (!commentEl) return;
+
+      const currentText = commentEl.textContent;
+      const newText = prompt('Sửa bình luận:', currentText);
+
+      if (newText === null || newText.trim() === '' || newText.trim() === currentText) {
+        return;
+      }
+
+      API.call('updateComment', [App.state.sessionId, commentId, newText.trim()])
+        .then(result => {
+          if (result.success) {
+            commentEl.textContent = newText.trim();
+            Toast.show('Đã cập nhật', 'success');
+          } else {
+            Toast.show(result.error || 'Lỗi', 'error');
+          }
+        })
+        .catch(error => {
+          Toast.show('Lỗi: ' + error.message, 'error');
+        });
+    },
+
+    // ===================================================================
+    // 5. DELETE COMMENT
+    // ===================================================================
+    delete(commentId, appId, containerId) {
+      Modal.confirm('Xóa bình luận', 'Bạn có chắc muốn xóa bình luận này?', () => {
+        API.call('deleteComment', [App.state.sessionId, commentId])
+          .then(result => {
+            if (result.success) {
+              const commentEl = document.querySelector(`[data-id="${commentId}"]`);
+              if (commentEl) {
+                commentEl.style.opacity = '0';
+                setTimeout(() => commentEl.remove(), 200);
+              }
+              Toast.show('Đã xóa bình luận', 'success');
+            } else {
+              Toast.show(result.error || 'Lỗi', 'error');
+            }
+          })
+          .catch(error => {
+            Toast.show('Lỗi: ' + error.message, 'error');
+          });
+      }, true);
+    }
+  };
+
+  // ===================================================================
+  // VISIBILITY CHANGE HANDLER
+  // ===================================================================
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      UI.stopCarousel();
+    } else if (App.ui.currentTab === 'home') {
+      UI.initCarousel();
+    }
+  });
+
+  // ===================================================================
+  // HANDLE APP DETAIL SHEET COMMENTS
+  // ===================================================================
+  document.addEventListener('DOMContentLoaded', () => {
+    // Observer for when app-detail sheet is opened
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === 1 && node.id === 'sheet-app-detail') {
+            const app = App.ui.selectedApp;
+            if (app) {
+              setTimeout(() => {
+                Comments.load(app.id, 'comments-container');
+              }, 100);
+            }
+          }
+        });
+      });
+    });
+
+    const modalsContainer = document.getElementById('modals-container');
+    if (modalsContainer) {
+      observer.observe(modalsContainer, { childList: true });
+    }
+  });
+</script>

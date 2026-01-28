@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="iApp Pro - Hệ thống quản lý ứng dụng">
+  <base target="_top">
+  <title>iApp Pro V5.0</title>
+
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- Styles -->
+  <?!= include('Styles'); ?>
+
+  <style>
+    /* Critical CSS - Hiển thị ngay khi load */
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary, #0f172a);
+      color: var(--text-primary, #f8fafc);
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+
+    /* Initial Loading Screen */
+    #initial-loader {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.3s, visibility 0.3s;
+    }
+
+    #initial-loader.hidden {
+      opacity: 0;
+      visibility: hidden;
+    }
+
+    .loader-logo {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      color: white;
+      margin-bottom: 24px;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        transform: scale(1);
+      }
+
+      50% {
+        transform: scale(1.05);
+      }
+    }
+
+    .loader-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 16px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .loader-text {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 14px;
+    }
+
+    /* Error Fallback */
+    #error-fallback {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #0f172a;
+      padding: 40px 20px;
+      text-align: center;
+      z-index: 9998;
+    }
+
+    #error-fallback.show {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .error-icon {
+      width: 80px;
+      height: 80px;
+      background: rgba(239, 68, 68, 0.1);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      color: #ef4444;
+      margin-bottom: 24px;
+    }
+
+    .error-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #f8fafc;
+    }
+
+    .error-message {
+      color: rgba(255, 255, 255, 0.6);
+      margin-bottom: 24px;
+      max-width: 400px;
+    }
+
+    .error-btn {
+      padding: 12px 24px;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Initial Loading Screen -->
+  <div id="initial-loader">
+    <div class="loader-logo">
+      <i class="fas fa-rocket"></i>
+    </div>
+    <div class="loader-spinner"></div>
+    <p class="loader-text">Đang khởi động...</p>
+  </div>
+
+  <!-- Error Fallback -->
+  <div id="error-fallback">
+    <div class="error-icon">
+      <i class="fas fa-exclamation-triangle"></i>
+    </div>
+    <h2 class="error-title">Không thể tải ứng dụng</h2>
+    <p class="error-message" id="error-detail">Đã xảy ra lỗi khi khởi tạo. Vui lòng thử lại.</p>
+    <button class="error-btn" onclick="location.reload()">
+      <i class="fas fa-redo"></i> Tải lại
+    </button>
+  </div>
+
+  <!-- Login Screen -->
+  <div id="login-screen" class="screen login-screen" style="display: none;">
+    <div class="login-bg"></div>
+    <div class="login-container">
+      <div class="login-header">
+        <div class="login-logo">
+          <i class="fas fa-rocket"></i>
+        </div>
+        <h1 class="login-title">iApp Pro</h1>
+        <p class="login-subtitle">Hệ thống quản lý ứng dụng</p>
+      </div>
+
+      <form id="login-form" class="login-form" onsubmit="return App.handleLogin(event)">
+        <div class="form-group">
+          <div class="input-wrapper">
+            <i class="fas fa-user input-icon"></i>
+            <input type="text" id="login-username" class="input" placeholder="Tên đăng nhập" autocomplete="username"
+              required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="input-wrapper">
+            <i class="fas fa-lock input-icon"></i>
+            <input type="password" id="login-password" class="input" placeholder="Mật khẩu"
+              autocomplete="current-password" required>
+            <button type="button" class="input-action" onclick="App.togglePassword()">
+              <i class="fas fa-eye" id="password-icon"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="btn-login">
+          <span class="btn-text">Đăng nhập</span>
+          <i class="fas fa-spinner fa-spin btn-loading" style="display:none;"></i>
+        </button>
+
+        <div class="login-divider">
+          <span>hoặc</span>
+        </div>
+
+        <button type="button" class="btn btn-secondary btn-block" onclick="App.loginAsGuest()">
+          <i class="fas fa-user-secret"></i>
+          <span>Tiếp tục với tư cách Khách</span>
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <p>iApp Pro v5.0</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="main-app" class="app-wrapper" style="display: none;">
+
+    <!-- Sidebar (Desktop) -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <i class="fas fa-rocket"></i>
+        </div>
+        <span class="sidebar-brand">iApp Pro</span>
+      </div>
+
+      <nav class="sidebar-nav" id="sidebar-nav"></nav>
+
+      <div class="sidebar-footer">
+        <button class="sidebar-toggle" onclick="App.toggleSidebar()">
+          <i class="fas fa-chevron-left" id="sidebar-toggle-icon"></i>
+          <span class="sidebar-toggle-text">Thu gọn</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main id="main-content" class="main-content">
+
+      <!-- Header -->
+      <header id="header" class="header">
+        <button class="header-menu-btn" onclick="App.toggleSidebar()">
+          <i class="fas fa-bars"></i>
+        </button>
+
+        <div class="header-search">
+          <i class="fas fa-search"></i>
+          <input type="text" id="global-search" placeholder="Tìm kiếm..." oninput="App.handleSearch(this.value)">
+        </div>
+
+        <div class="header-actions">
+          <button class="header-btn" onclick="App.toggleTheme()" title="Chế độ tối/sáng">
+            <i class="fas fa-moon" id="theme-icon"></i>
+          </button>
+
+          <button class="header-btn add-btn" id="header-add-btn" onclick="App.openAddApp()" style="display:none;">
+            <i class="fas fa-plus"></i>
+            <span>Thêm App</span>
+          </button>
+
+          <div class="header-user" onclick="App.toggleUserMenu()">
+            <div class="avatar" id="header-avatar">A</div>
+            <div class="header-user-info">
+              <span class="header-user-name" id="header-user-name">User</span>
+              <span class="header-user-role" id="header-user-role">Role</span>
+            </div>
+            <i class="fas fa-chevron-down"></i>
+          </div>
+        </div>
+      </header>
+
+      <!-- Page Content -->
+      <div id="page-content" class="page-content"></div>
+
+      <!-- FAB - Floating Action Button -->
+      <button id="fab-add" class="fab" onclick="App.openAddApp()" style="display: none;">
+        <i class="fas fa-plus"></i>
+      </button>
+
+      <!-- FAB - Floating Action Button -->
+      <button id="fab-add" class="fab" onclick="App.openAddApp()" style="display: none;">
+        <i class="fas fa-plus"></i>
+      </button>
+
+      <!-- Tab Bar (Mobile) -->
+      <nav id="tab-bar" class="tab-bar">
+        <button class="tab-item active" data-tab="home" onclick="App.switchTab('home')">
+          <i class="fas fa-home"></i>
+          <span>Trang chủ</span>
+        </button>
+        <button class="tab-item" data-tab="browse" onclick="App.switchTab('browse')">
+          <i class="fas fa-compass"></i>
+          <span>Khám phá</span>
+        </button>
+        <button class="tab-item" data-tab="favorites" onclick="App.switchTab('favorites')">
+          <i class="fas fa-heart"></i>
+          <span>Yêu thích</span>
+          <span class="tab-badge" id="fav-badge" style="display:none;">0</span>
+        </button>
+        <button class="tab-item" data-tab="profile" onclick="App.switchTab('profile')">
+          <i class="fas fa-user"></i>
+          <span>Hồ sơ</span>
+        </button>
+      </nav>
+    </main>
+
+    <!-- Side Panel (Desktop Detail) -->
+    <aside id="side-panel" class="side-panel">
+      <div class="panel-header">
+        <h3 class="panel-title" id="panel-title">Chi tiết</h3>
+        <button class="panel-close" onclick="App.closePanel()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="panel-body" id="panel-body"></div>
+    </aside>
+  </div>
+
+  <!-- Modals Container -->
+  <div id="modals-container"></div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="loading-overlay">
+    <div class="loading-spinner"></div>
+    <p class="loading-text" id="loading-text">Đang xử lý...</p>
+  </div>
+
+  <!-- Scripts -->
+  <?!= include('AppCore'); ?>
+  <?!= include('AppUI'); ?>
+  <?!= include('AppAPI'); ?>
+
+  <script>
+    // Initialize app when DOM ready
+    document.addEventListener('DOMContentLoaded', function () {
+      try {
+        // Đợi 1 chút để đảm bảo tất cả scripts đã load
+        setTimeout(function () {
+          // Kiểm tra các module cần thiết
+          if (typeof App === 'undefined') {
+            throw new Error('App module not loaded');
+          }
+          if (typeof UI === 'undefined') {
+            throw new Error('UI module not loaded');
+          }
+
+          // Khởi tạo App
+          App.init();
+
+          // Khởi tạo History & ScrollBehavior sau khi App đã init
+          if (typeof History !== 'undefined') {
+            History.init();
+          }
+          if (typeof ScrollBehavior !== 'undefined') {
+            ScrollBehavior.init();
+          }
+
+        }, 50);
+
+      } catch (error) {
+        console.error('App init error:', error);
+        document.getElementById('initial-loader').classList.add('hidden');
+        document.getElementById('error-detail').textContent = error.message;
+        document.getElementById('error-fallback').classList.add('show');
+      }
+    });
+
+
+    // Global error handler
+    window.onerror = function (msg, url, lineNo, columnNo, error) {
+      console.error('Global error:', msg, error);
+      return false;
+    };
+  </script>
+</body>
+
+</html>

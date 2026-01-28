@@ -1,0 +1,1774 @@
+<script>
+  // ===================================================================
+  // iAPP PRO V5.0 - CORE APPLICATION
+  // Modular, Safe, Error-handled
+  // ===================================================================
+
+  // ===================================================================
+  // 1. APPLICATION STATE
+  // ===================================================================
+  const App = {
+    // State
+    state: {
+      sessionId: null,
+      user: null,
+      apps: [],
+      categories: [],
+      users: [],
+      favorites: [],
+      ratings: {},
+      permissions: {},
+      stats: {}
+    },
+
+    // UI State
+    ui: {
+      currentTab: 'home',
+      isDesktop: false,
+      sidebarOpen: false,
+      sidebarExpanded: true,
+      panelOpen: false,
+      selectedApp: null,
+      editingApp: null,
+      editingUser: null,
+      editingCat: null,
+      theme: 'dark'
+    },
+
+    // Settings
+    settings: {
+      theme: 'dark',
+      hideTabBarOnScroll: true,  // ⭐ THÊM MỚI
+      viewMode: 'grid',          // ⭐ THÊM MỚI
+      itemsPerPage: 20           // ⭐ THÊM MỚI
+    },
+
+    // Recent data
+    recent: {
+      apps: [],
+      searches: []
+    },
+
+    // Storage keys
+    KEYS: {
+      SESSION: 'iapp_v5_session',
+      SETTINGS: 'iapp_v5_settings',
+      RECENT: 'iapp_v5_recent',
+      FAVORITES_LOCAL: 'iapp_v5_favs'
+    },
+
+    // ===================================================================
+    // 2. INITIALIZATION
+    // ===================================================================
+    init() {
+      console.log('🚀 iApp Pro V5.0 initializing...');
+
+      try {
+        // Load settings
+        this.loadSettings();
+        this.applyTheme();
+
+        // Load recent data
+        this.recent.apps = this.storage.get(this.KEYS.RECENT, []);
+
+        // Check for existing session
+        const savedSession = localStorage.getItem(this.KEYS.SESSION) ||
+          sessionStorage.getItem(this.KEYS.SESSION);
+
+        if (savedSession) {
+          this.state.sessionId = savedSession;
+          this.validateSession();
+        } else {
+          this.showLogin();
+        }
+
+        // Setup responsive
+        this.setupResponsive();
+
+        // Setup keyboard shortcuts
+        this.setupKeyboard();
+
+        // ⭐ Delay khởi tạo History & ScrollBehavior sau khi DOM ready
+        // (để đảm bảo UI đã được load)
+        setTimeout(() => {
+          if (typeof History !== 'undefined') History.init();
+          if (typeof ScrollBehavior !== 'undefined') ScrollBehavior.init();
+        }, 100);
+
+      } catch (error) {
+        console.error('Init error:', error);
+        this.showError('Lỗi khởi tạo: ' + error.message);
+      }
+    },
+
+    // ===================================================================
+    // 3. STORAGE UTILITIES
+    // ===================================================================
+    storage: {
+      get(key, defaultVal = null) {
+        try {
+          const val = localStorage.getItem(key);
+          return val ? JSON.parse(val) : defaultVal;
+        } catch {
+          return defaultVal;
+        }
+      },
+
+      set(key, value) {
+        try {
+          localStorage.setItem(key, JSON.stringify(value));
+        } catch (e) {
+          console.warn('Storage error:', e);
+        }
+      },
+
+      remove(key) {
+        try {
+          localStorage.removeItem(key);
+        } catch (e) {
+          console.warn('Storage remove error:', e);
+        }
+      }
+    },
+
+    // ===================================================================
+    // 4. SETTINGS
+    // ===================================================================
+    loadSettings() {
+      const saved = this.storage.get(this.KEYS.SETTINGS, {});
+      this.settings = { ...this.settings, ...saved };
+      this.ui.theme = this.settings.theme;
+      this.ui.sidebarExpanded = this.storage.get('iapp_sidebar', true);
+    },
+
+    saveSettings() {
+      this.storage.set(this.KEYS.SETTINGS, this.settings);
+    },
+
+    applyTheme() {
+      document.body.classList.toggle('light-theme', this.settings.theme === 'light');
+
+      const themeColor = this.settings.theme === 'light' ? '#f8fafc' : '#0f172a';
+      const metaTheme = document.querySelector('meta[name="theme-color"]');
+      if (metaTheme) metaTheme.content = themeColor;
+
+      // Update icon
+      const themeIcon = document.getElementById('theme-icon');
+      if (themeIcon) {
+        themeIcon.className = this.settings.theme === 'light' ? 'fas fa-sun' : 'fas fa-moon';
+      }
+    },
+
+    toggleTheme() {
+      this.settings.theme = this.settings.theme === 'light' ? 'dark' : 'light';
+      this.saveSettings();
+      this.applyTheme();
+      Toast.show('Đã đổi giao diện', 'success');
+    },
+
+    // ===================================================================
+    // 5. RESPONSIVE SETUP
+    // ===================================================================
+    setupResponsive() {
+      const checkDesktop = () => {
+        const wasDesktop = this.ui.isDesktop;
+        this.ui.isDesktop = window.innerWidth >= 1024;
+
+        if (wasDesktop !== this.ui.isDesktop) {
+          this.onLayoutChange();
+        }
+      };
+
+      checkDesktop();
+
+      let resizeTimer;
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(checkDesktop, 150);
+      });
+    },
+
+    onLayoutChange() {
+      if (this.ui.isDesktop) {
+        // Show sidebar
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar) {
+          sidebar.classList.toggle('expanded', this.ui.sidebarExpanded);
+        }
+      }
+
+      // ⭐ THÊM KIỂM TRA: Chỉ render khi UI đã sẵn sàng
+      if (this.state.apps.length > 0 && typeof UI !== 'undefined') {
+        UI.render();
+      }
+    },
+
+    // ===================================================================
+    // 6. KEYBOARD SHORTCUTS
+    // ===================================================================
+    setupKeyboard() {
+      document.addEventListener('keydown', (e) => {
+        // Escape - close modals
+        if (e.key === 'Escape') {
+          Modal.closeAll();
+        }
+
+        // Ctrl+K - focus search
+        if (e.ctrlKey && e.key === 'k') {
+          e.preventDefault();
+          const search = document.getElementById('global-search');
+          if (search) search.focus();
+        }
+
+        // Ctrl+B - toggle sidebar (desktop)
+        if (e.ctrlKey && e.key === 'b' && this.ui.isDesktop) {
+          e.preventDefault();
+          this.toggleSidebar();
+        }
+      });
+    },
+
+    // ===================================================================
+    // 7. AUTHENTICATION
+    // ===================================================================
+    showLogin() {
+      document.getElementById('initial-loader')?.classList.add('hidden');
+      document.getElementById('login-screen').style.display = 'flex';
+      document.getElementById('main-app').style.display = 'none';
+    },
+
+    showMain() {
+      document.getElementById('initial-loader')?.classList.add('hidden');
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('main-app').style.display = 'flex';
+    },
+
+    showError(message) {
+      document.getElementById('initial-loader')?.classList.add('hidden');
+      document.getElementById('error-detail').textContent = message;
+      document.getElementById('error-fallback').classList.add('show');
+    },
+
+    handleLogin(event) {
+      event.preventDefault();
+
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value;
+
+      if (!username || !password) {
+        Toast.show('Vui lòng nhập đầy đủ thông tin', 'error');
+        return false;
+      }
+
+      const btn = document.getElementById('btn-login');
+      const btnText = btn.querySelector('.btn-text');
+      const btnLoading = btn.querySelector('.btn-loading');
+
+      btn.disabled = true;
+      btnText.textContent = 'Đang đăng nhập...';
+      btnLoading.style.display = 'inline-block';
+
+      API.call('login', [username, password])
+        .then(result => {
+          if (result.success) {
+            this.state.sessionId = result.sessionId;
+            this.state.user = result.user;
+            localStorage.setItem(this.KEYS.SESSION, result.sessionId);
+            Toast.show('Đăng nhập thành công!', 'success');
+            this.loadData();
+          } else {
+            Toast.show(result.error || 'Đăng nhập thất bại', 'error');
+          }
+        })
+        .catch(error => {
+          Toast.show('Lỗi: ' + error.message, 'error');
+        })
+        .finally(() => {
+          btn.disabled = false;
+          btnText.textContent = 'Đăng nhập';
+          btnLoading.style.display = 'none';
+        });
+
+      return false;
+    },
+
+    loginAsGuest() {
+      Loading.show('Đang vào...');
+
+      API.call('loginAsGuest')
+        .then(result => {
+          if (result.success) {
+            this.state.sessionId = result.sessionId;
+            this.state.user = result.user;
+            sessionStorage.setItem(this.KEYS.SESSION, result.sessionId);
+            Toast.show('Chào mừng!', 'success');
+            this.loadData();
+          } else {
+            Loading.hide();
+            Toast.show(result.error || 'Lỗi', 'error');
+          }
+        })
+        .catch(error => {
+          Loading.hide();
+          Toast.show('Lỗi: ' + error.message, 'error');
+        });
+    },
+
+    validateSession() {
+      Loading.show('Đang xác thực...');
+
+      API.call('validateSession', [this.state.sessionId])
+        .then(result => {
+          if (result.valid) {
+            this.state.user = result.user;
+            this.loadData();
+          } else {
+            this.clearSession();
+            Loading.hide();
+            this.showLogin();
+            if (result.error) Toast.show(result.error, 'warning');
+          }
+        })
+        .catch(error => {
+          this.clearSession();
+          Loading.hide();
+          this.showLogin();
+          Toast.show('Lỗi kết nối', 'error');
+        });
+    },
+
+    logout() {
+      Modal.confirm('Đăng xuất', 'Bạn có chắc muốn đăng xuất?', () => {
+        Loading.show('Đang đăng xuất...');
+
+        API.call('logout', [this.state.sessionId])
+          .then(() => {
+            this.clearSession();
+            Loading.hide();
+            this.showLogin();
+            Toast.show('Đã đăng xuất', 'info');
+
+            // Reset form
+            const form = document.getElementById('login-form');
+            if (form) form.reset();
+          })
+          .catch(() => {
+            this.clearSession();
+            Loading.hide();
+            this.showLogin();
+          });
+      });
+    },
+
+    clearSession() {
+      localStorage.removeItem(this.KEYS.SESSION);
+      sessionStorage.removeItem(this.KEYS.SESSION);
+      this.state.sessionId = null;
+      this.state.user = null;
+      this.state.apps = [];
+      this.state.categories = [];
+      this.state.users = [];
+      this.state.favorites = [];
+    },
+
+    togglePassword() {
+      const input = document.getElementById('login-password');
+      const icon = document.getElementById('password-icon');
+
+      if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.replace('fa-eye', 'fa-eye-slash');
+      } else {
+        input.type = 'password';
+        icon.classList.replace('fa-eye-slash', 'fa-eye');
+      }
+    },
+
+    // ===================================================================
+    // 8. DATA LOADING
+    // ===================================================================
+    loadData() {
+      Loading.show('Đang tải dữ liệu...');
+
+      API.call('getInitialData', [this.state.sessionId])
+        .then(result => {
+          Loading.hide();
+
+          if (result.success) {
+            // Update state
+            this.state.user = result.user;
+            this.state.apps = result.apps || [];
+            this.state.categories = result.categories || [];
+            this.state.users = result.users || [];
+            this.state.favorites = result.favorites || [];
+            this.state.ratings = result.ratings || {};
+            this.state.permissions = result.permissions || {};
+            this.state.stats = result.stats || {};
+
+            // Show main app
+            this.showMain();
+
+            // Render UI
+            UI.init();
+            UI.render();
+
+          } else if (result.requiresAuth) {
+            this.clearSession();
+            this.showLogin();
+            Toast.show(result.error || 'Phiên hết hạn', 'warning');
+          } else {
+            Toast.show(result.error || 'Lỗi tải dữ liệu', 'error');
+          }
+        })
+        .catch(error => {
+          Loading.hide();
+          Toast.show('Lỗi: ' + error.message, 'error');
+          this.showLogin();
+        });
+    },
+
+    refreshData() {
+      Toast.show('Đang làm mới...', 'info');
+      this.loadData();
+    },
+
+    // ===================================================================
+    // 9. NAVIGATION
+    // ===================================================================
+    switchTab(tabName) {
+      // Push history trước khi chuyển tab
+      if (!History.isNavigating) {
+        History.push({ type: 'tab', tab: tabName });
+      }
+
+      this.ui.currentTab = tabName;
+
+      // Update tab bar
+      document.querySelectorAll('.tab-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.tab === tabName);
+      });
+
+      // Update sidebar nav
+      document.querySelectorAll('.sidebar-nav-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.tab === tabName);
+      });
+
+      // Render content
+      UI.renderPage(tabName);
+
+      // Scroll to top
+      const pageContent = document.getElementById('page-content');
+      if (pageContent) pageContent.scrollTop = 0;
+
+      // Close mobile sidebar
+      if (!this.ui.isDesktop) {
+        this.closeSidebar();
+      }
+    },
+
+    toggleSidebar() {
+      if (this.ui.isDesktop) {
+        this.ui.sidebarExpanded = !this.ui.sidebarExpanded;
+        document.getElementById('sidebar')?.classList.toggle('expanded', this.ui.sidebarExpanded);
+        this.storage.set('iapp_sidebar', this.ui.sidebarExpanded);
+      } else {
+        this.ui.sidebarOpen = !this.ui.sidebarOpen;
+        document.getElementById('sidebar')?.classList.toggle('open', this.ui.sidebarOpen);
+
+        if (this.ui.sidebarOpen) {
+          Modal.showOverlay('sidebar-overlay', () => this.closeSidebar());
+        } else {
+          Modal.hideOverlay('sidebar-overlay');
+        }
+      }
+    },
+
+    closeSidebar() {
+      this.ui.sidebarOpen = false;
+      document.getElementById('sidebar')?.classList.remove('open');
+      Modal.hideOverlay('sidebar-overlay');
+    },
+
+    // ===================================================================
+    // 10. PANEL (Desktop detail view)
+    // ===================================================================
+    openPanel(appId) {
+      const app = this.state.apps.find(a => a.id === appId);
+      if (!app) {
+        Toast.show('Không tìm thấy ứng dụng', 'error');
+        return;
+      }
+
+      this.ui.selectedApp = app;
+      this.ui.panelOpen = true;
+      this.addRecent(appId);
+
+      // Increment views
+      API.call('incrementViews', [this.state.sessionId, appId]);
+      app.views = (app.views || 0) + 1;
+
+      // Push history
+      History.push({ type: 'app-detail', appId: appId });
+
+      // Render panel
+      UI.renderPanel(app);
+
+      document.getElementById('side-panel')?.classList.add('open');
+    },
+
+
+    closePanel() {
+      this.ui.panelOpen = false;
+      this.ui.selectedApp = null;
+      document.getElementById('side-panel')?.classList.remove('open');
+    },
+
+    // ===================================================================
+    // 11. APP DETAIL (Mobile)
+    // ===================================================================
+    openAppDetail(appId) {
+      if (this.ui.isDesktop) {
+        this.openPanel(appId);
+        return;
+      }
+
+      const app = this.state.apps.find(a => a.id === appId);
+      if (!app) {
+        Toast.show('Không tìm thấy ứng dụng', 'error');
+        return;
+      }
+
+      this.ui.selectedApp = app;
+      this.addRecent(appId);
+
+      // Increment views
+      API.call('incrementViews', [this.state.sessionId, appId]);
+      app.views = (app.views || 0) + 1;
+
+      // Push history
+      History.push({ type: 'app-detail', appId: appId });
+
+      // Show detail sheet
+      Modal.showSheet('app-detail', UI.renderAppDetailContent(app));
+    },
+
+
+    // ===================================================================
+    // 12. RECENT APPS
+    // ===================================================================
+    addRecent(appId) {
+      this.recent.apps = this.recent.apps.filter(id => id !== appId);
+      this.recent.apps.unshift(appId);
+      if (this.recent.apps.length > 10) {
+        this.recent.apps = this.recent.apps.slice(0, 10);
+      }
+      this.storage.set(this.KEYS.RECENT, this.recent.apps);
+    },
+
+    // ===================================================================
+    // 13. SEARCH
+    // ===================================================================
+    handleSearch(query) {
+      query = query.trim();
+
+      if (!query) {
+        UI.renderPage(this.ui.currentTab);
+        return;
+      }
+
+      const results = this.searchApps(query);
+      UI.renderSearchResults(results, query);
+    },
+
+    searchApps(query) {
+      query = query.toLowerCase();
+      return this.state.apps.filter(app => {
+        const name = (app.name || '').toLowerCase();
+        const desc = (app.description || '').toLowerCase();
+        const cat = (app.category || '').toLowerCase();
+        const tags = (app.tags || '').toLowerCase();
+        return name.includes(query) || desc.includes(query) ||
+          cat.includes(query) || tags.includes(query);
+      });
+    },
+
+    // ===================================================================
+    // 14. FAVORITES
+    // ===================================================================
+    isGuest() {
+      return this.state.user && (this.state.user.id === 'GUEST' || this.state.user.role === 'Guest');
+    },
+
+    getLocalFavorites() {
+      return this.storage.get(this.KEYS.FAVORITES_LOCAL, []);
+    },
+
+    isFavorite(appId) {
+      if (this.isGuest()) {
+        return this.getLocalFavorites().includes(appId);
+      }
+      return this.state.favorites.includes(appId);
+    },
+
+    toggleFavorite(appId, btnElement) {
+      if (this.isGuest()) {
+        // Local favorites for guests
+        let favs = this.getLocalFavorites();
+        const index = favs.indexOf(appId);
+
+        if (index === -1) {
+          favs.push(appId);
+          Toast.show('Đã thêm yêu thích', 'success');
+        } else {
+          favs.splice(index, 1);
+          Toast.show('Đã bỏ yêu thích', 'info');
+        }
+
+        this.storage.set(this.KEYS.FAVORITES_LOCAL, favs);
+        this.updateFavUI(appId, index === -1, btnElement);
+        this.updateFavBadge();
+        return;
+      }
+
+      // Server-side favorites
+      const wasFav = this.isFavorite(appId);
+
+      // Optimistic update
+      if (wasFav) {
+        this.state.favorites = this.state.favorites.filter(id => id !== appId);
+      } else {
+        this.state.favorites.push(appId);
+      }
+      this.updateFavUI(appId, !wasFav, btnElement);
+      this.updateFavBadge();
+
+      API.call('toggleFavorite', [this.state.sessionId, appId])
+        .then(result => {
+          if (result.success) {
+            Toast.show(result.message, 'success');
+          } else {
+            // Rollback
+            if (wasFav) {
+              this.state.favorites.push(appId);
+            } else {
+              this.state.favorites = this.state.favorites.filter(id => id !== appId);
+            }
+            this.updateFavUI(appId, wasFav, btnElement);
+            this.updateFavBadge();
+            Toast.show(result.error || 'Lỗi', 'error');
+          }
+        })
+        .catch(error => {
+          // Rollback
+          if (wasFav) {
+            this.state.favorites.push(appId);
+          } else {
+            this.state.favorites = this.state.favorites.filter(id => id !== appId);
+          }
+          this.updateFavUI(appId, wasFav, btnElement);
+          this.updateFavBadge();
+          Toast.show('Lỗi: ' + error.message, 'error');
+        });
+    },
+
+    updateFavUI(appId, isFav, btn) {
+      if (btn) {
+        btn.classList.toggle('active', isFav);
+        const icon = btn.querySelector('i');
+        if (icon) {
+          icon.className = isFav ? 'fas fa-heart' : 'far fa-heart';
+        }
+      }
+
+      // Update all fav buttons for this app
+      document.querySelectorAll(`[data-fav-id="${appId}"]`).forEach(el => {
+        el.classList.toggle('active', isFav);
+        const icon = el.querySelector('i');
+        if (icon) {
+          icon.className = isFav ? 'fas fa-heart' : 'far fa-heart';
+        }
+      });
+    },
+
+    updateFavBadge() {
+      const count = this.isGuest() ? this.getLocalFavorites().length : this.state.favorites.length;
+
+      const badge = document.getElementById('fav-badge');
+      if (badge) {
+        badge.textContent = count > 99 ? '99+' : count;
+        badge.style.display = count > 0 ? 'flex' : 'none';
+      }
+    },
+
+    // ===================================================================
+    // 15. RATINGS
+    // ===================================================================
+    rateApp(appId, stars) {
+      if (this.isGuest()) {
+        Toast.show('Vui lòng đăng nhập để đánh giá', 'warning');
+        return;
+      }
+
+      // Optimistic update
+      if (!this.state.ratings[appId]) {
+        this.state.ratings[appId] = { average: 0, count: 0, userRating: 0 };
+      }
+      const oldRating = this.state.ratings[appId].userRating;
+      this.state.ratings[appId].userRating = stars;
+
+      API.call('rateApp', [this.state.sessionId, appId, stars])
+        .then(result => {
+          if (result.success) {
+            this.state.ratings[appId] = {
+              average: result.average,
+              count: result.count,
+              userRating: result.stars
+            };
+
+            // Update app in list
+            const app = this.state.apps.find(a => a.id === appId);
+            if (app) {
+              app.avgRating = result.average;
+              app.ratingCount = result.count;
+            }
+
+            Toast.show(result.message, 'success');
+          } else {
+            this.state.ratings[appId].userRating = oldRating;
+            Toast.show(result.error || 'Lỗi', 'error');
+          }
+        })
+        .catch(error => {
+          this.state.ratings[appId].userRating = oldRating;
+          Toast.show('Lỗi: ' + error.message, 'error');
+        });
+    },
+
+    // ===================================================================
+    // 16. APP CRUD
+    // ===================================================================
+    openAddApp() {
+      this.ui.editingApp = null;
+      Modal.showSheet('app-form', UI.renderAppForm());
+    },
+
+    openEditApp(appId) {
+      const app = this.state.apps.find(a => a.id === appId);
+      if (!app) {
+        Toast.show('Không tìm thấy ứng dụng', 'error');
+        return;
+      }
+
+      this.ui.editingApp = app;
+      Modal.showSheet('app-form', UI.renderAppForm(app));
+    },
+
+    saveApp() {
+      const form = document.getElementById('app-form-content');
+      if (!form) return;
+
+      const data = {
+        id: this.ui.editingApp?.id || null,
+        name: document.getElementById('app-name')?.value?.trim(),
+        link: document.getElementById('app-link')?.value?.trim(),
+        description: document.getElementById('app-desc')?.value?.trim(),
+        category: document.getElementById('app-category')?.value,
+        visibility: document.getElementById('app-visibility')?.value,
+        imageURL: document.getElementById('app-image-url')?.value?.trim(),
+        videoURL: document.getElementById('app-video')?.value?.trim(),
+        tags: document.getElementById('app-tags')?.value?.trim()
+      };
+
+      if (!data.name) {
+        Toast.show('Vui lòng nhập tên ứng dụng', 'error');
+        return;
+      }
+
+      const isNew = !data.id;
+      Loading.show(isNew ? 'Đang thêm...' : 'Đang lưu...');
+
+      API.call('saveApp', [this.state.sessionId, data, isNew])
+        .then(result => {
+          Loading.hide();
+          if (result.success) {
+            Toast.show(result.message || 'Đã lưu', 'success');
+            Modal.close('app-form');
+            this.loadData();
+          } else {
+            Toast.show(result.error || 'Lỗi', 'error');
+          }
+        })
+        .catch(error => {
+          Loading.hide();
+          Toast.show('Lỗi: ' + error.message, 'error');
+        });
+    },
+
+    deleteApp(appId) {
+      const app = this.state.apps.find(a => a.id === appId);
+      if (!app) return;
+
+      Modal.confirm('Xóa ứng dụng', `Bạn có chắc muốn xóa "${app.name}"?`, () => {
+        Loading.show('Đang xóa...');
+
+        API.call('deleteApp', [this.state.sessionId, appId])
+          .then(result => {
+            Loading.hide();
+            if (result.success) {
+              Toast.show('Đã xóa', 'success');
+              Modal.closeAll();
+              this.closePanel();
+              this.loadData();
+            } else {
+              Toast.show(result.error || 'Lỗi', 'error');
+            }
+          })
+          .catch(error => {
+            Loading.hide();
+            Toast.show('Lỗi: ' + error.message, 'error');
+          });
+      }, true);
+    },
+
+    openAppLink(appId) {
+      const app = this.state.apps.find(a => a.id === appId);
+      if (app?.link) {
+        window.open(app.link, '_blank');
+      } else {
+        Toast.show('Chưa có đường dẫn', 'warning');
+      }
+    },
+
+    // ===================================================================
+    // 17. CATEGORY HELPERS
+    // ===================================================================
+    showCategoryApps(catId) {
+      const cat = this.state.categories.find(c => c.id === catId);
+      if (!cat) return;
+
+      const apps = this.state.apps.filter(a => a.category === cat.name);
+
+      if (this.ui.isDesktop) {
+        UI.renderCategoryPage(cat, apps);
+      } else {
+        Modal.showSheet('category-apps', UI.renderCategorySheet(cat, apps));
+      }
+    },
+
+    // ===================================================================
+    // 18. USER MENU
+    // ===================================================================
+    toggleUserMenu() {
+      const user = this.state.user;
+      if (!user) return;
+
+      Modal.showActionSheet([
+        { text: `👋 Xin chào, ${user.displayName || user.username}`, disabled: true },
+        { text: '👤 Hồ sơ cá nhân', handler: () => this.switchTab('profile') },
+        { text: '🎨 Giao diện', handler: () => this.openAppearanceSettings() },
+        { text: '🚪 Đăng xuất', destructive: true, handler: () => this.logout() }
+      ]);
+    },
+
+    openAppearanceSettings() {
+      Modal.showSheet('appearance', UI.renderAppearanceSettings());
+    },
+
+    // ===================================================================
+    // 19. ADMIN FUNCTIONS
+    // ===================================================================
+    openAdminUsers() {
+      Modal.showSheet('admin-users', UI.renderAdminUsers());
+    },
+
+    openAdminCategories() {
+      Modal.showSheet('admin-categories', UI.renderAdminCategories());
+    },
+
+    openAdminStats() {
+      Modal.showSheet('admin-stats', UI.renderAdminStats());
+    },
+
+    openAdminLogs() {
+      Loading.show('Đang tải...');
+
+      API.call('getLogs', [this.state.sessionId, 100])
+        .then(result => {
+          Loading.hide();
+          if (result.success) {
+            Modal.showSheet('admin-logs', UI.renderAdminLogs(result.logs));
+          } else {
+            Toast.show(result.error || 'Lỗi', 'error');
+          }
+        })
+        .catch(error => {
+          Loading.hide();
+          Toast.show('Lỗi: ' + error.message, 'error');
+        });
+    },
+
+    // User CRUD
+    openAddUser() {
+      this.ui.editingUser = null;
+      Modal.showSheet('user-form', UI.renderUserForm());
+    },
+
+    openEditUser(userId) {
+      const user = this.state.users.find(u => u.id === userId);
+      if (!user) {
+        Toast.show('Không tìm thấy người dùng', 'error');
+        return;
+      }
+
+      this.ui.editingUser = user;
+      Modal.showSheet('user-form', UI.renderUserForm(user));
+    },
+
+    saveUser() {
+      const data = {
+        id: this.ui.editingUser?.id || null,
+        username: document.getElementById('user-username')?.value?.trim(),
+        password: document.getElementById('user-password')?.value,
+        displayName: document.getElementById('user-display')?.value?.trim(),
+        email: document.getElementById('user-email')?.value?.trim(),
+        role: document.getElementById('user-role')?.value,
+        status: document.getElementById('user-status')?.value
+      };
+
+      if (!data.username) {
+        Toast.show('Vui lòng nhập tên đăng nhập', 'error');
+        return;
+      }
+
+      const isNew = !data.id;
+
+      if (isNew && (!data.password || data.password.length < 6)) {
+        Toast.show('Mật khẩu phải có ít nhất 6 ký tự', 'error');
+        return;
+      }
+
+      Loading.show(isNew ? 'Đang thêm...' : 'Đang lưu...');
+
+      API.call('saveUser', [this.state.sessionId, data, isNew])
+        .then(result => {
+          Loading.hide();
+          if (result.success) {
+            Toast.show(result.message || 'Đã lưu', 'success');
+            Modal.close('user-form');
+            this.loadData();
+          } else {
+            Toast.show(result.error || 'Lỗi', 'error');
+          }
+        })
+        .catch(error => {
+          Loading.hide();
+          Toast.show('Lỗi: ' + error.message, 'error');
+        });
+    },
+
+    deleteUser(userId) {
+      if (userId === this.state.user?.id) {
+        Toast.show('Không thể tự xóa tài khoản', 'error');
+        return;
+      }
+
+      const user = this.state.users.find(u => u.id === userId);
+      if (!user) return;
+
+      Modal.confirm('Xóa người dùng', `Bạn có chắc muốn xóa "${user.displayName || user.username}"?`, () => {
+        Loading.show('Đang xóa...');
+
+        API.call('deleteUser', [this.state.sessionId, userId])
+          .then(result => {
+            Loading.hide();
+            if (result.success) {
+              Toast.show('Đã xóa', 'success');
+              Modal.close('user-form');
+              this.loadData();
+            } else {
+              Toast.show(result.error || 'Lỗi', 'error');
+            }
+          })
+          .catch(error => {
+            Loading.hide();
+            Toast.show('Lỗi: ' + error.message, 'error');
+          });
+      }, true);
+    },
+
+    // Category CRUD
+    openAddCategory() {
+      this.ui.editingCat = null;
+      Modal.showSheet('category-form', UI.renderCategoryForm());
+    },
+
+    openEditCategory(catId) {
+      const cat = this.state.categories.find(c => c.id === catId);
+      if (!cat) {
+        Toast.show('Không tìm thấy danh mục', 'error');
+        return;
+      }
+
+      this.ui.editingCat = cat;
+      Modal.showSheet('category-form', UI.renderCategoryForm(cat));
+    },
+
+    saveCategory() {
+      const data = {
+        id: this.ui.editingCat?.id || null,
+        name: document.getElementById('cat-name')?.value?.trim(),
+        icon: document.getElementById('cat-icon')?.value || 'fa-folder',
+        description: document.getElementById('cat-desc')?.value?.trim(),
+        sortOrder: parseInt(document.getElementById('cat-sort')?.value) || 0
+      };
+
+      if (!data.name) {
+        Toast.show('Vui lòng nhập tên danh mục', 'error');
+        return;
+      }
+
+      const isNew = !data.id;
+      Loading.show(isNew ? 'Đang thêm...' : 'Đang lưu...');
+
+      API.call('saveCategory', [this.state.sessionId, data, isNew])
+        .then(result => {
+          Loading.hide();
+          if (result.success) {
+            Toast.show(result.message || 'Đã lưu', 'success');
+            Modal.close('category-form');
+            this.loadData();
+          } else {
+            Toast.show(result.error || 'Lỗi', 'error');
+          }
+        })
+        .catch(error => {
+          Loading.hide();
+          Toast.show('Lỗi: ' + error.message, 'error');
+        });
+    },
+
+    deleteCategory(catId) {
+      const cat = this.state.categories.find(c => c.id === catId);
+      if (!cat) return;
+
+      const appsInCat = this.state.apps.filter(a => a.category === cat.name).length;
+      if (appsInCat > 0) {
+        Toast.show(`Có ${appsInCat} ứng dụng trong danh mục này, không thể xóa`, 'warning');
+        return;
+      }
+
+      Modal.confirm('Xóa danh mục', `Bạn có chắc muốn xóa "${cat.name}"?`, () => {
+        Loading.show('Đang xóa...');
+
+        API.call('deleteCategory', [this.state.sessionId, catId])
+          .then(result => {
+            Loading.hide();
+            if (result.success) {
+              Toast.show('Đã xóa', 'success');
+              Modal.close('category-form');
+              this.loadData();
+            } else {
+              Toast.show(result.error || 'Lỗi', 'error');
+            }
+          })
+          .catch(error => {
+            Loading.hide();
+            Toast.show('Lỗi: ' + error.message, 'error');
+          });
+      }, true);
+    },
+
+    // Icon picker
+    selectIcon(icon) {
+      document.getElementById('cat-icon').value = icon;
+      document.querySelectorAll('.icon-picker-item').forEach(el => {
+        el.classList.toggle('selected', el.dataset.icon === icon);
+      });
+    },
+
+    // ===================================================================
+    // 20. CHANGE PASSWORD
+    // ===================================================================
+    openChangePassword() {
+      if (this.isGuest()) {
+        Toast.show('Khách không thể đổi mật khẩu', 'warning');
+        return;
+      }
+      Modal.showSheet('change-password', UI.renderChangePassword());
+    },
+
+    changePassword() {
+      const current = document.getElementById('cur-pwd')?.value;
+      const newPwd = document.getElementById('new-pwd')?.value;
+      const confirm = document.getElementById('confirm-pwd')?.value;
+
+      if (!current) {
+        Toast.show('Vui lòng nhập mật khẩu hiện tại', 'error');
+        return;
+      }
+
+      if (!newPwd || newPwd.length < 6) {
+        Toast.show('Mật khẩu mới phải có ít nhất 6 ký tự', 'error');
+        return;
+      }
+
+      if (newPwd !== confirm) {
+        Toast.show('Xác nhận mật khẩu không khớp', 'error');
+        return;
+      }
+
+      Loading.show('Đang đổi mật khẩu...');
+
+      API.call('changePassword', [this.state.sessionId, current, newPwd])
+        .then(result => {
+          Loading.hide();
+          if (result.success) {
+            Toast.show('Đã đổi mật khẩu thành công', 'success');
+            Modal.close('change-password');
+          } else {
+            Toast.show(result.error || 'Lỗi', 'error');
+          }
+        })
+        .catch(error => {
+          Loading.hide();
+          Toast.show('Lỗi: ' + error.message, 'error');
+        });
+    },
+
+    // ===================================================================
+    // 21. CONTACT
+    // ===================================================================
+    openContact() {
+      Modal.showSheet('contact', UI.renderContact());
+    },
+
+    submitContact() {
+      const name = document.getElementById('contact-name')?.value?.trim();
+      const email = document.getElementById('contact-email')?.value?.trim();
+      const message = document.getElementById('contact-message')?.value?.trim();
+
+      if (!name || !email || !message) {
+        Toast.show('Vui lòng điền đầy đủ thông tin', 'error');
+        return;
+      }
+
+      Loading.show('Đang gửi...');
+
+      API.call('submitContact', [this.state.sessionId, { name, email, message }])
+        .then(result => {
+          Loading.hide();
+          if (result.success) {
+            Toast.show('Đã gửi phản hồi thành công', 'success');
+            Modal.close('contact');
+          } else {
+            Toast.show(result.error || 'Lỗi', 'error');
+          }
+        })
+        .catch(error => {
+          Loading.hide();
+          Toast.show('Lỗi: ' + error.message, 'error');
+        });
+    }
+  };
+
+  // ===================================================================
+  // API WRAPPER
+  // ===================================================================
+  const API = {
+    call(functionName, args = []) {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+        [functionName](...args);
+      });
+    }
+  };
+
+  // ===================================================================
+  // TOAST NOTIFICATIONS
+  // ===================================================================
+  const Toast = {
+    show(message, type = 'info', duration = 3000) {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+
+      const icons = {
+        success: 'fa-check',
+        error: 'fa-times',
+        warning: 'fa-exclamation',
+        info: 'fa-info'
+      };
+
+      const id = 'toast-' + Date.now();
+
+      const html = `
+      <div class="toast ${type}" id="${id}">
+        <div class="toast-icon"><i class="fas ${icons[type] || icons.info}"></i></div>
+        <span class="toast-message">${this.escape(message)}</span>
+        <button class="toast-close" onclick="Toast.remove('${id}')"><i class="fas fa-times"></i></button>
+      </div>
+    `;
+
+      container.insertAdjacentHTML('beforeend', html);
+
+      setTimeout(() => this.remove(id), duration);
+    },
+
+    remove(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.add('removing');
+        setTimeout(() => el.remove(), 200);
+      }
+    },
+
+    escape(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  };
+
+  // ===================================================================
+  // LOADING OVERLAY
+  // ===================================================================
+  const Loading = {
+    show(text = 'Đang xử lý...') {
+      const overlay = document.getElementById('loading-overlay');
+      const textEl = document.getElementById('loading-text');
+      if (textEl) textEl.textContent = text;
+      if (overlay) overlay.classList.add('show');
+    },
+
+    hide() {
+      const overlay = document.getElementById('loading-overlay');
+      if (overlay) overlay.classList.remove('show');
+    }
+  };
+
+  // ===================================================================
+  // MODAL MANAGER
+  // ===================================================================
+  const Modal = {
+    stack: [],
+
+    showOverlay(id, onClose) {
+      let overlay = document.getElementById(id);
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = id;
+        overlay.className = 'overlay';
+        if (onClose) overlay.onclick = onClose;
+        document.getElementById('modals-container').appendChild(overlay);
+      }
+      setTimeout(() => overlay.classList.add('show'), 10);
+    },
+
+    hideOverlay(id) {
+      const overlay = document.getElementById(id);
+      if (overlay) {
+        overlay.classList.remove('show');
+        setTimeout(() => overlay.remove(), 300);
+      }
+    },
+
+    showSheet(name, content) {
+      const container = document.getElementById('modals-container');
+
+      // Create overlay
+      const overlayId = `overlay-${name}`;
+      this.showOverlay(overlayId, () => this.close(name));
+
+      // Create sheet
+      const sheet = document.createElement('div');
+      sheet.id = `sheet-${name}`;
+      sheet.className = 'sheet';
+      sheet.innerHTML = content;
+
+      container.appendChild(sheet);
+
+      // Show with animation
+      setTimeout(() => sheet.classList.add('show'), 10);
+
+      this.stack.push(name);
+
+      // ⭐ Push history (trừ app-detail vì đã push ở openAppDetail)
+      if (name !== 'app-detail' && !History.isNavigating) {
+        History.push({ type: 'sheet', sheet: name });
+      }
+    },
+
+    close(name) {
+      const sheet = document.getElementById(`sheet-${name}`);
+      const overlayId = `overlay-${name}`;
+
+      if (sheet) {
+        sheet.classList.remove('show');
+        setTimeout(() => sheet.remove(), 300);
+      }
+
+      this.hideOverlay(overlayId);
+
+      this.stack = this.stack.filter(n => n !== name);
+    },
+
+    closeAll() {
+      [...this.stack].forEach(name => this.close(name));
+      this.stack = [];
+    },
+
+    showActionSheet(actions) {
+      const container = document.getElementById('modals-container');
+
+      // Create overlay
+      this.showOverlay('action-overlay', () => this.closeActionSheet());
+
+      // Create action sheet
+      const sheet = document.createElement('div');
+      sheet.id = 'action-sheet';
+      sheet.className = 'action-sheet';
+
+      const actionsHtml = actions
+        .filter(a => !a.disabled)
+        .map((action, i) => `
+        <div class="action-sheet-item ${action.destructive ? 'destructive' : ''}" 
+             onclick="Modal.handleAction(${i})">
+          ${Toast.escape(action.text)}
+        </div>
+      `).join('');
+
+      sheet.innerHTML = `
+      <div class="action-sheet-group">${actionsHtml}</div>
+      <div class="action-sheet-group">
+        <div class="action-sheet-item cancel" onclick="Modal.closeActionSheet()">Hủy</div>
+      </div>
+    `;
+
+      // Store handlers
+      this._actionHandlers = actions.filter(a => !a.disabled).map(a => a.handler);
+
+      container.appendChild(sheet);
+      setTimeout(() => sheet.classList.add('show'), 10);
+    },
+
+    handleAction(index) {
+      const handler = this._actionHandlers?.[index];
+      this.closeActionSheet();
+      if (handler) setTimeout(handler, 100);
+    },
+
+    closeActionSheet() {
+      const sheet = document.getElementById('action-sheet');
+      if (sheet) {
+        sheet.classList.remove('show');
+        setTimeout(() => sheet.remove(), 300);
+      }
+      this.hideOverlay('action-overlay');
+      this._actionHandlers = null;
+    },
+
+    confirm(title, message, onConfirm, destructive = false) {
+      this.showActionSheet([
+        { text: title, disabled: true },
+        { text: message, disabled: true },
+        { text: 'Xác nhận', destructive: destructive, handler: onConfirm },
+      ]);
+    }
+  };
+
+  // ===================================================================
+  // HISTORY MANAGEMENT - Quản lý nút Back trình duyệt
+  // ===================================================================
+  const History = {
+    // Stack lưu trạng thái
+    stack: [],
+    isNavigating: false,
+
+    // Khởi tạo
+    init() {
+      // Đặt state ban đầu
+      const initialState = { type: 'tab', tab: 'home', timestamp: Date.now() };
+      window.history.replaceState(initialState, '', window.location.href);
+      this.stack = [initialState];
+
+      // Lắng nghe sự kiện Back/Forward
+      window.addEventListener('popstate', (e) => this.handlePopState(e));
+
+      console.log('📜 History Management initialized');
+    },
+
+    // Thêm state mới vào lịch sử
+    push(state) {
+      if (this.isNavigating) return;
+
+      state.timestamp = Date.now();
+      this.stack.push(state);
+      window.history.pushState(state, '', window.location.href);
+
+      console.log('📜 History push:', state.type, state);
+    },
+
+    // Xử lý khi user bấm Back
+    handlePopState(event) {
+      this.isNavigating = true;
+
+      const state = event.state;
+      console.log('📜 History popstate:', state);
+
+      if (!state) {
+        // Không có state → về home
+        this.navigateTo({ type: 'tab', tab: 'home' });
+        this.isNavigating = false;
+        return;
+      }
+
+      // Xử lý theo loại state
+      switch (state.type) {
+        case 'tab':
+          this.navigateToTab(state.tab);
+          break;
+
+        case 'sheet':
+          // Nếu back từ sheet → đóng sheet hiện tại
+          this.closeCurrentSheet();
+          break;
+
+        case 'app-detail':
+          // Nếu back từ app detail → đóng detail
+          this.closeAppDetail();
+          break;
+
+        default:
+          this.navigateToTab('home');
+      }
+
+      // Cập nhật stack
+      if (this.stack.length > 1) {
+        this.stack.pop();
+      }
+
+      this.isNavigating = false;
+    },
+
+    // Navigate đến tab (không push history)
+    navigateToTab(tabName) {
+      App.ui.currentTab = tabName;
+
+      // Update tab bar
+      document.querySelectorAll('.tab-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.tab === tabName);
+      });
+
+      // Update sidebar
+      document.querySelectorAll('.sidebar-nav-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.tab === tabName);
+      });
+
+      // Render page
+      UI.renderPage(tabName);
+
+      // Close mobile sidebar
+      if (!App.ui.isDesktop) {
+        App.closeSidebar();
+      }
+    },
+
+    // Đóng sheet hiện tại
+    closeCurrentSheet() {
+      const sheets = Modal.stack;
+      if (sheets.length > 0) {
+        const lastSheet = sheets[sheets.length - 1];
+        Modal.close(lastSheet);
+      }
+    },
+
+    // Đóng app detail
+    closeAppDetail() {
+      if (App.ui.isDesktop) {
+        App.closePanel();
+      } else {
+        Modal.close('app-detail');
+      }
+    },
+
+    // Navigate đến state cụ thể
+    navigateTo(state) {
+      switch (state.type) {
+        case 'tab':
+          this.navigateToTab(state.tab);
+          break;
+      }
+    },
+
+    // Thay thế state hiện tại (không thêm vào stack)
+    replace(state) {
+      state.timestamp = Date.now();
+      window.history.replaceState(state, '', window.location.href);
+      if (this.stack.length > 0) {
+        this.stack[this.stack.length - 1] = state;
+      }
+    }
+  };
+
+  // ===================================================================
+  // SCROLL BEHAVIOR - Ẩn/hiện Tab Bar khi cuộn
+  // ===================================================================
+  const ScrollBehavior = {
+    lastScrollTop: 0,
+    ticking: false,
+    tabBar: null,
+    fab: null,
+    threshold: 10, // Ngưỡng scroll tối thiểu để kích hoạt
+
+    init() {
+      this.tabBar = document.getElementById('tab-bar');
+      this.fab = document.getElementById('fab-add');
+
+      const pageContent = document.getElementById('page-content');
+      if (pageContent) {
+        pageContent.addEventListener('scroll', (e) => this.onScroll(e), { passive: true });
+      }
+
+      console.log('📜 ScrollBehavior initialized');
+    },
+
+    onScroll(e) {
+      if (!App.settings.hideTabBarOnScroll) return;
+      if (App.ui.isDesktop) return; // Chỉ áp dụng cho mobile
+
+      const scrollTop = e.target.scrollTop;
+
+      if (!this.ticking) {
+        window.requestAnimationFrame(() => {
+          this.handleScroll(scrollTop);
+          this.ticking = false;
+        });
+        this.ticking = true;
+      }
+    },
+
+    handleScroll(scrollTop) {
+      const diff = scrollTop - this.lastScrollTop;
+
+      // Cuộn xuống đủ ngưỡng → ẩn
+      if (diff > this.threshold && scrollTop > 100) {
+        this.hide();
+      }
+      // Cuộn lên đủ ngưỡng → hiện
+      else if (diff < -this.threshold) {
+        this.show();
+      }
+
+      this.lastScrollTop = scrollTop;
+    },
+
+    hide() {
+      if (this.tabBar) this.tabBar.classList.add('hidden');
+      if (this.fab) this.fab.classList.add('expanded');
+    },
+
+    show() {
+      if (this.tabBar) this.tabBar.classList.remove('hidden');
+      if (this.fab) this.fab.classList.remove('expanded');
+    },
+
+    // Reset về trạng thái hiện
+    reset() {
+      this.lastScrollTop = 0;
+      this.show();
+    }
+  };
+
+  // ===================================================================
+  // VIEW MODE - Toggle Grid/List
+  // ===================================================================
+  const ViewMode = {
+    // Toggle giữa grid và list
+    toggle() {
+      App.settings.viewMode = App.settings.viewMode === 'grid' ? 'list' : 'grid';
+      App.saveSettings();
+
+      // Re-render trang hiện tại
+      UI.renderPage(App.ui.currentTab);
+
+      Toast.show(`Chế độ xem: ${App.settings.viewMode === 'grid' ? 'Lưới' : 'Danh sách'}`, 'success');
+    },
+
+    // Set mode cụ thể
+    set(mode) {
+      if (mode !== 'grid' && mode !== 'list') return;
+      App.settings.viewMode = mode;
+      App.saveSettings();
+      UI.renderPage(App.ui.currentTab);
+    },
+
+    // Lấy mode hiện tại
+    get() {
+      return App.settings.viewMode || 'grid';
+    },
+
+    // Kiểm tra có phải grid không
+    isGrid() {
+      return this.get() === 'grid';
+    }
+  };
+
+  // ===================================================================
+  // PAGINATION - Phân trang
+  // ===================================================================
+  const Pagination = {
+    // State
+    state: {
+      currentPage: 1,
+      itemsPerPage: 20,
+      totalItems: 0,
+      totalPages: 0
+    },
+
+    // Các option số items/trang
+    perPageOptions: [10, 20, 30, 50],
+
+    // Khởi tạo với data
+    init(totalItems) {
+      this.state.totalItems = totalItems;
+      this.state.itemsPerPage = App.settings.itemsPerPage || 20;
+      this.state.currentPage = 1;
+      this.calculateTotalPages();
+    },
+
+    // Tính tổng số trang
+    calculateTotalPages() {
+      this.state.totalPages = Math.ceil(this.state.totalItems / this.state.itemsPerPage);
+      // Đảm bảo currentPage không vượt quá totalPages
+      if (this.state.currentPage > this.state.totalPages && this.state.totalPages > 0) {
+        this.state.currentPage = this.state.totalPages;
+      }
+    },
+
+    // Lấy items cho trang hiện tại
+    getPageItems(items) {
+      const start = (this.state.currentPage - 1) * this.state.itemsPerPage;
+      const end = start + this.state.itemsPerPage;
+      return items.slice(start, end);
+    },
+
+    // Chuyển đến trang
+    goToPage(page) {
+      if (page < 1 || page > this.state.totalPages) return;
+      this.state.currentPage = page;
+
+      // Re-render
+      UI.renderPage(App.ui.currentTab);
+
+      // Scroll to top
+      const pageContent = document.getElementById('page-content');
+      if (pageContent) pageContent.scrollTop = 0;
+    },
+
+    // Trang trước
+    prevPage() {
+      this.goToPage(this.state.currentPage - 1);
+    },
+
+    // Trang sau
+    nextPage() {
+      this.goToPage(this.state.currentPage + 1);
+    },
+
+    // Thay đổi số items/trang
+    setItemsPerPage(count) {
+      this.state.itemsPerPage = count;
+      App.settings.itemsPerPage = count;
+      App.saveSettings();
+
+      // Reset về trang 1
+      this.state.currentPage = 1;
+      this.calculateTotalPages();
+
+      // Re-render
+      UI.renderPage(App.ui.currentTab);
+
+      Toast.show(`Hiển thị ${count} ứng dụng/trang`, 'success');
+    },
+
+    // Kiểm tra có cần pagination không
+    needsPagination() {
+      return this.state.totalItems > this.state.itemsPerPage;
+    },
+
+    // Render pagination UI
+    render() {
+      if (!this.needsPagination()) return '';
+
+      const { currentPage, totalPages, itemsPerPage } = this.state;
+
+      // Tạo array các số trang để hiển thị
+      let pages = [];
+      const maxVisible = 5;
+
+      if (totalPages <= maxVisible) {
+        pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+      } else {
+        // Luôn hiện trang 1
+        pages.push(1);
+
+        // Tính start và end
+        let start = Math.max(2, currentPage - 1);
+        let end = Math.min(totalPages - 1, currentPage + 1);
+
+        // Thêm ... nếu cần
+        if (start > 2) pages.push('...');
+
+        for (let i = start; i <= end; i++) {
+          pages.push(i);
+        }
+
+        if (end < totalPages - 1) pages.push('...');
+
+        // Luôn hiện trang cuối
+        pages.push(totalPages);
+      }
+
+      return `
+      <div class="pagination-wrapper">
+        <div class="pagination">
+          <button class="pagination-btn" onclick="Pagination.prevPage()" ${currentPage === 1 ? 'disabled' : ''}>
+            <i class="fas fa-chevron-left"></i>
+          </button>
+          
+          <div class="pagination-pages">
+            ${pages.map(p => {
+        if (p === '...') {
+          return '<span class="pagination-ellipsis">...</span>';
+        }
+        return `
+                <button class="pagination-page ${p === currentPage ? 'active' : ''}" 
+                        onclick="Pagination.goToPage(${p})">
+                  ${p}
+                </button>
+              `;
+      }).join('')}
+          </div>
+          
+          <button class="pagination-btn" onclick="Pagination.nextPage()" ${currentPage === totalPages ? 'disabled' : ''}>
+            <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+        
+        <div class="pagination-info">
+          <span class="text-secondary text-sm">Hiển thị</span>
+          <select class="pagination-select" onchange="Pagination.setItemsPerPage(Number(this.value))">
+            ${this.perPageOptions.map(opt => `
+              <option value="${opt}" ${opt === itemsPerPage ? 'selected' : ''}>${opt}</option>
+            `).join('')}
+          </select>
+          <span class="text-secondary text-sm">/ trang</span>
+        </div>
+      </div>
+    `;
+    }
+  };
+
+
+</script>
